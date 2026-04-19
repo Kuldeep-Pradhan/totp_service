@@ -1,0 +1,403 @@
+{
+	"info": {
+		"_postman_id": "otp-service-collection",
+		"name": "OTP Service - Stateless TOTP",
+		"description": "Truly stateless TOTP-based OTP service. No database, no in-memory storage. Uses HMAC-signed request tokens to carry state and session tokens as proof of validation.\n\n**Flow:**\n1. Call `requestOTP` → get `requestToken`\n2. Call `resendOTP` with `requestToken` → get new `requestToken`\n3. Call `validateOTP` with `requestToken` + `otp` → get `sessionToken`",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "requestToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "otp",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "sessionToken",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Health",
+			"item": [
+				{
+					"name": "Heartbeat Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/HbtChk",
+							"host": ["{{baseUrl}}"],
+							"path": ["HbtChk"]
+						},
+						"description": "Check if the service is running. Returns current timestamp, service name, and version."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "OTP Flow",
+			"item": [
+				{
+					"name": "1. Request OTP",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"",
+									"if (jsonData.requestToken) {",
+									"    pm.collectionVariables.set('requestToken', jsonData.requestToken);",
+									"    console.log('requestToken saved to collection variable');",
+									"}",
+									"",
+									"// Extract OTP from displayMessage in dev mode",
+									"if (jsonData.displayMessage && jsonData.displayMessage.includes('is your OTP')) {",
+									"    var otp = jsonData.displayMessage.split(' ')[3];",
+									"    pm.collectionVariables.set('otp', otp);",
+									"    console.log('OTP extracted: ' + otp);",
+									"}",
+									"",
+									"pm.test('Status is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has requestToken', function () {",
+									"    pm.expect(jsonData).to.have.property('requestToken');",
+									"});",
+									"",
+									"pm.test('Success is true', function () {",
+									"    pm.expect(jsonData.success).to.eql(true);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"user_name\": \"john_doe\",\n    \"mobileNumber\": \"9876543210\",\n    \"params\": \"txn123456abcd\",\n    \"bankCode\": \"IDBI\",\n    \"feature\": \"LOGIN\",\n    \"operationPerformed\": \"OTP_VERIFICATION\",\n    \"messageData\": {\n        \"template\": \"otp_sms\"\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/sms/requestOTP",
+							"host": ["{{baseUrl}}"],
+							"path": ["sms", "requestOTP"]
+						},
+						"description": "**Step 1** — Generate a TOTP-based OTP for the given mobileNumber + params combination.\n\nReturns a signed `requestToken` that must be passed to resendOTP / validateOTP.\n\n**Fields:**\n- `mobileNumber`: 10-digit Indian mobile number (starts with 6-9)\n- `params`: Unique identifier per OTP request (10-150 alphanumeric chars)\n- `bankCode`: Optional — controls OTP validity (IDBI=5min, SBI=3min, default=2min)\n- `messageData`: Object passed to notification API (OTP is injected into it)\n\n**In dev mode**, the OTP is shown in the response message."
+					},
+					"response": []
+				},
+				{
+					"name": "2. Resend OTP",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"",
+									"if (jsonData.requestToken) {",
+									"    pm.collectionVariables.set('requestToken', jsonData.requestToken);",
+									"    console.log('New requestToken saved (timer reset)');",
+									"}",
+									"",
+									"// Extract OTP from displayMessage in dev mode",
+									"if (jsonData.displayMessage && jsonData.displayMessage.includes('is your OTP')) {",
+									"    var otp = jsonData.displayMessage.split(' ')[3];",
+									"    pm.collectionVariables.set('otp', otp);",
+									"    console.log('New OTP extracted: ' + otp);",
+									"}",
+									"",
+									"pm.test('Status is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has new requestToken', function () {",
+									"    pm.expect(jsonData).to.have.property('requestToken');",
+									"});",
+									"",
+									"pm.test('Success is true', function () {",
+									"    pm.expect(jsonData.success).to.eql(true);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"requestToken\": \"{{requestToken}}\",\n    \"messageData\": {\n        \"template\": \"otp_sms\"\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/sms/resendOTP",
+							"host": ["{{baseUrl}}"],
+							"path": ["sms", "resendOTP"]
+						},
+						"description": "**Step 2 (optional)** — Resend OTP using the `requestToken` from Step 1.\n\nNo need to resend mobileNumber, params, bankCode — they're embedded in the token.\n\nReturns a **new** `requestToken` with a reset validity timer.\n\n**Auto-chained:** If you run Step 1 first, the `requestToken` variable is automatically populated."
+					},
+					"response": []
+				},
+				{
+					"name": "3. Validate OTP",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"",
+									"if (jsonData.sessionToken) {",
+									"    pm.collectionVariables.set('sessionToken', jsonData.sessionToken);",
+									"    console.log('sessionToken saved — proof of validation');",
+									"}",
+									"",
+									"pm.test('Status is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has sessionToken', function () {",
+									"    pm.expect(jsonData).to.have.property('sessionToken');",
+									"});",
+									"",
+									"pm.test('Success is true', function () {",
+									"    pm.expect(jsonData.success).to.eql(true);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"requestToken\": \"{{requestToken}}\",\n    \"otp\": \"{{otp}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/sms/validateOTP",
+							"host": ["{{baseUrl}}"],
+							"path": ["sms", "validateOTP"]
+						},
+						"description": "**Step 3** — Validate the OTP against the TOTP secret embedded in the `requestToken`.\n\nOn success, returns a `sessionToken` — HMAC-signed proof of successful validation.\n\n**Auto-chained:** If you run Step 1 (or Step 2) first, both `requestToken` and `otp` are automatically populated.\n\n**Dev bypass:** Use `000000` as OTP in development mode to skip real validation."
+					},
+					"response": []
+				}
+			],
+			"description": "Run these in order: **Request → (Resend) → Validate**\n\nThe test scripts auto-save `requestToken` and `otp` as collection variables, so each step chains into the next automatically."
+		},
+		{
+			"name": "Edge Cases",
+			"item": [
+				{
+					"name": "Validate with Dev Bypass (000000)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"requestToken\": \"{{requestToken}}\",\n    \"otp\": \"000000\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/sms/validateOTP",
+							"host": ["{{baseUrl}}"],
+							"path": ["sms", "validateOTP"]
+						},
+						"description": "Dev-mode bypass — `000000` is accepted as a valid OTP in development environment."
+					},
+					"response": []
+				},
+				{
+					"name": "Validate with Wrong OTP",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"requestToken\": \"{{requestToken}}\",\n    \"otp\": \"999999\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/sms/validateOTP",
+							"host": ["{{baseUrl}}"],
+							"path": ["sms", "validateOTP"]
+						},
+						"description": "Should return 400 — Invalid OTP."
+					},
+					"response": []
+				},
+				{
+					"name": "Validate with Tampered Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"requestToken\": \"tampered_fake_token.invalid_signature\",\n    \"otp\": \"123456\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/sms/validateOTP",
+							"host": ["{{baseUrl}}"],
+							"path": ["sms", "validateOTP"]
+						},
+						"description": "Should return 400 — Invalid request token."
+					},
+					"response": []
+				},
+				{
+					"name": "Request OTP - No BankCode (2min default)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.requestToken) {",
+									"    pm.collectionVariables.set('requestToken', jsonData.requestToken);",
+									"}",
+									"if (jsonData.displayMessage && jsonData.displayMessage.includes('is your OTP')) {",
+									"    var otp = jsonData.displayMessage.split(' ')[3];",
+									"    pm.collectionVariables.set('otp', otp);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"user_name\": \"alice\",\n    \"mobileNumber\": \"8765432109\",\n    \"params\": \"payment12345ab\",\n    \"feature\": \"PAYMENT\",\n    \"operationPerformed\": \"FUND_TRANSFER\",\n    \"messageData\": {\n        \"template\": \"otp_sms\",\n        \"amount\": \"5000\"\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/sms/requestOTP",
+							"host": ["{{baseUrl}}"],
+							"path": ["sms", "requestOTP"]
+						},
+						"description": "Request OTP without bankCode — defaults to 2-minute validity."
+					},
+					"response": []
+				},
+				{
+					"name": "Request OTP - Missing Fields",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"mobileNumber\": \"1234\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/sms/requestOTP",
+							"host": ["{{baseUrl}}"],
+							"path": ["sms", "requestOTP"]
+						},
+						"description": "Should return 400 — validation errors for missing required fields."
+					},
+					"response": []
+				}
+			],
+			"description": "Edge case tests — wrong OTP, tampered tokens, missing fields, no bankCode."
+		}
+	]
+}
