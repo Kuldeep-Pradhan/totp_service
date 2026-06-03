@@ -7,6 +7,6 @@ node_modules/
 
 
 # Exclude docs and collections
-# *.md
-# *.postman_collection.json
-# totp-api-docs/
+*.md
+*.postman_collection.json
+totp-api-docs/
