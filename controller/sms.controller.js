@@ -5,7 +5,7 @@ const { apiCallTime } = require("../utils/helper/timestamps");
 class SmsController extends BaseController {
     /**
      * @swagger
-     * /NSDLMA/otp-service/sms/request-otp:
+     * /NSDLMA/otp-service/request-otp:
      *   post:
      *     summary: Request a new OTP
      *     description: |
@@ -89,7 +89,7 @@ class SmsController extends BaseController {
 
     /**
      * @swagger
-     * /NSDLMA/otp-service/sms/resend-otp:
+     * /NSDLMA/otp-service/resend-otp:
      *   post:
      *     summary: Resend OTP
      *     description: |
@@ -146,7 +146,7 @@ class SmsController extends BaseController {
 
     /**
      * @swagger
-     * /NSDLMA/otp-service/sms/validate-otp:
+     * /NSDLMA/otp-service/validate-otp:
      *   post:
      *     summary: Validate an OTP
      *     description: |
@@ -211,7 +211,7 @@ class SmsController extends BaseController {
 
     /**
      * @swagger
-     * /NSDLMA/otp-service/sms/verify-session:
+     * /NSDLMA/otp-service/verify-session:
      *   post:
      *     summary: Verify a Session Token
      *     description: |
