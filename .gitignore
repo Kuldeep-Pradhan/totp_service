@@ -1,0 +1,12 @@
+node_modules/
+.DS_Store
+*.log
+.env
+.idea/
+.vscode/
+
+
+# Exclude docs and collections
+# *.md
+# *.postman_collection.json
+# totp-api-docs/

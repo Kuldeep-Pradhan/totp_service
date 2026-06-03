@@ -1,0 +1,13 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+*.md
+Dockerfile
+.dockerignore
+jenkinsfile
+
+
+# Exclude docs and collections
+*.postman_collection.json
+totp-api-docs/

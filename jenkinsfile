@@ -1,0 +1,117 @@
+@Library('devops-pipeline-lib@main-v1') _
+
+Main([
+    applicationName: "totp-service",
+    
+    // language of the application, can be "java", "python", "nodejs", 
+    language: "nodejs",
+
+    // container_port for the application
+    containerPort: "8080",
+
+    // for deploying stage on premises, set to true
+    onprem_stage: "false",
+
+    // Resource requests and limits
+    resources: [
+        memoryRequest: "250Mi",
+        cpuRequest: "250m",
+        memoryLimit: "500Mi", 
+        cpuLimit: "500m",
+        replicaCount: "1"
+    ],
+    
+    
+    probes: [
+    type: "http",    
+    readinessEnabled: true,  // use false if you do not want probes
+    livenessEnabled: true,
+    healthCheckPath: "NSDLMA/otp-service/HbtChk",  //added by developer
+    readinessInitialDelay: "30",   // for jave set 45 and other language set 30
+    livenessInitialDelay: "0"      // for java set 90 and other language set 0
+   ],
+
+    notifications: [
+    // approvers for the pipeline
+        teamLead: "kuldeep",
+    // email notifications
+        emailRecipients: "kuldeep.pradhan@iserveu.co.in",
+    ],
+    
+
+// labels and selectors for the Kubernetes deployment
+    metadata: [
+        // for authentication, set to "auth" or "no-auth" or if both "auth,no-auth" this is for gateway
+        authStatus: "no-auth",
+        // for application type, set to "backend" or "frontend" 
+        applicationType: "backend",
+        // for example kotak, bob, ta, 
+        organizationName: "nsdlma"
+    ],
+    
+    // environments configuration
+    // ====< TO BE MAINTAINED BY DEVOPS TEAM >====
+    environments: [
+        dev: [
+            project: "isu-internal",
+            region: "asia-south1-a",
+            cluster: "kubernetes-uat-cluster",
+            namespace: "nsdlma-dev",
+            credentialsId: "k8-jenkins-deployment",
+            artifactCredsId: "isu-internal-artifact",
+            registryLocation: "asia-docker.pkg.dev",
+            repositoryName: "asia.gcr.io"
+        ],
+        stage: [
+            project: "isu-internal",
+            region: "asia-south1-a",
+            cluster: "kubernetes-uat-cluster",
+            namespace: "nsdlma-stage",
+            credentialsId: "k8-jenkins-deployment",
+            artifactCredsId: "isu-internal-artifact",
+            registryLocation: "asia-docker.pkg.dev",
+            repositoryName: "asia.gcr.io"
+        ],
+        onprem_stage: [
+            project: "isu-internal",
+            region: "asia-south1-a",
+            cluster: "kubernetes-uat-cluster",
+            namespace: "default",
+            credentialsId: "k8-jenkins-deployment",
+            artifactCredsId: "isu-internal-artifact",
+            registryLocation: "asia-docker.pkg.dev",
+            repositoryName: "asia.gcr.io"
+        ],
+        uat: [
+            project: "isu-sso",
+            region: "asia-south2-a",
+            cluster: "isu-dr-uat-cluster",
+            namespace: "nsdlma",
+            credentialsId: "isu-sso-id",
+            artifactCredsId: "uat-artifactregistry",
+            registryLocation: "asia-docker.pkg.dev",
+            repositoryName: "asia.gcr.io"
+        ],
+        release: [
+            project: "isu-nsdl",
+            region: "asia-south1-a",
+            cluster: "nsdl-dc-cluster",
+            namespace: "nsdlma",
+            credentialsId: "isu-nsdl-k8",
+            artifactCredsId: "isu-nsdl-k8",
+            registryLocation: "asia-south1-docker.pkg.dev",
+            repositoryName: "nsdlma-dc"
+        ],
+        dr: [
+            project: "isu-nsdl",
+            region: "asia-south2-a",
+            cluster: "nsdl-dr-cluster",
+            namespace: "nsdlma",
+            credentialsId: "isu-nsdl-k8",
+            artifactCredsId: "isu-nsdl-k8",
+            registryLocation: "asia-south2-docker.pkg.dev",
+            repositoryName: "nsdlma-dr"
+        ]
+    ]
+    ]
+)
