@@ -7,7 +7,9 @@
     "start": "set NODE_ENV=development&& node app.js",
     "dev": "set NODE_ENV=development&& nodemon app.js",
     "dev:prod": "set NODE_ENV=production&& nodemon app.js",
-    "prod": "set NODE_ENV=production&& node app.js"
+    "prod": "set NODE_ENV=production&& node app.js",
+    "test": "jest",
+    "test:mutate": "stryker run"
   },
   "keywords": [],
   "author": "kuldeep isu-711",
@@ -30,6 +32,9 @@
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/jest-runner": "^9.6.1",
+    "jest": "^30.4.2",
     "nodemon": "^3.0.2"
   }
 }

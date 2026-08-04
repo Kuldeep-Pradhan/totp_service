@@ -20,6 +20,7 @@ async function getRedisSecret() {
 
         const payload = version.payload.data.toString('utf8');
         const secretJson = JSON.parse(payload);
+        console.info(`[Secrets] Redis secret fetched successfully. ${JSON.stringify(secretJson)}`);
         return secretJson;
     } catch (error) {
         console.error(`[Secrets] Failed to fetch secret ${REDIS_SECRET_NAME}:`, error.message);

@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stateless TOTP Service - Interactive Developer Guide</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #080a10;
+      --bg-card: rgba(18, 24, 40, 0.75);
+      --bg-card-hover: rgba(28, 36, 60, 0.85);
+      --border-color: rgba(255, 255, 255, 0.1);
+      --border-glow: rgba(168, 85, 247, 0.4);
+      --accent-purple: #a855f7;
+      --accent-indigo: #6366f1;
+      --accent-cyan: #06b6d4;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --font-sans: 'Outfit', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      line-height: 1.6;
+      min-height: 100vh;
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(168, 85, 247, 0.12) 0%, transparent 40%),
+        radial-gradient(circle at 85% 85%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
+        radial-gradient(circle at 50% 50%, rgba(6, 182, 212, 0.05) 0%, transparent 60%);
+      background-attachment: fixed;
+      padding: 20px;
+    }
+
+    .header {
+      max-width: 1280px;
+      margin: 0 auto 24px auto;
+      text-align: center;
+      padding: 24px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+
+    .badge-bar {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      background: rgba(168, 85, 247, 0.15);
+      border: 1px solid rgba(168, 85, 247, 0.3);
+      color: #c084fc;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-cyan { background: rgba(6, 182, 212, 0.15); border-color: rgba(6, 182, 212, 0.3); color: #38bdf8; }
+    .badge-green { background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); color: #34d399; }
+    .badge-amber { background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.3); color: #fbbf24; }
+
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 50%, #a855f7 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    .subtitle { color: var(--text-secondary); font-size: 1.05rem; }
+
+    .mode-switch-container {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+    }
+
+    .mode-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-family: var(--font-sans);
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .mode-btn.active {
+      background: linear-gradient(135deg, var(--accent-purple), var(--accent-indigo));
+      color: #ffffff;
+      border-color: transparent;
+      box-shadow: 0 4px 14px rgba(168, 85, 247, 0.4);
+    }
+    .mode-btn:hover:not(.active) { background: rgba(255, 255, 255, 0.15); color: var(--text-primary); }
+
+    .container { max-width: 1280px; margin: 0 auto; display: grid; gap: 24px; }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 24px;
+      backdrop-filter: blur(12px);
+    }
+
+    /* STEPPER */
+    .steps-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+    @media (max-width: 768px) { .steps-bar { grid-template-columns: 1fr; } }
+    .step-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    .step-item.active {
+      background: rgba(168, 85, 247, 0.12);
+      border-color: var(--accent-purple);
+      box-shadow: 0 0 20px rgba(168, 85, 247, 0.25);
+    }
+    .step-num { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; display: flex; justify-content: space-between; }
+    .step-item.active .step-num { color: #c084fc; }
+    .step-title { font-weight: 700; font-size: 1.1rem; color: var(--text-primary); }
+    .step-desc { font-size: 0.85rem; color: var(--text-secondary); margin-top: 2px; }
+
+    /* DEEP DIVE SECTION (Function by Function) */
+    .execution-layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 24px;
+      margin-top: 20px;
+    }
+    @media (max-width: 900px) { .execution-layout { grid-template-columns: 1fr; } }
+    
+    .execution-flow {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .flow-nodes {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      flex-grow: 1;
+      gap: 16px;
+    }
+
+    /* Vertical line connecting nodes */
+    .flow-nodes::before {
+      content: '';
+      position: absolute;
+      left: 17px;
+      top: 15px;
+      bottom: 25px;
+      width: 2px;
+      background: var(--border-color);
+      z-index: 0;
+    }
+
+    .flow-node {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      position: relative;
+      z-index: 1;
+      cursor: pointer;
+      opacity: 0.5;
+      transition: all 0.3s ease;
+    }
+    
+    .flow-node.active, .flow-node.completed { opacity: 1; }
+
+    .flow-dot {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--bg-card);
+      border: 2px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text-secondary);
+      transition: all 0.3s ease;
+      flex-shrink: 0;
+    }
+
+    .flow-node.active .flow-dot {
+      background: var(--accent-cyan);
+      border-color: var(--accent-cyan);
+      color: #000;
+      box-shadow: 0 0 15px rgba(6, 182, 212, 0.5);
+    }
+    .flow-node.completed .flow-dot {
+      background: var(--accent-purple);
+      border-color: var(--accent-purple);
+      color: #fff;
+    }
+
+    .flow-label {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      flex-grow: 1;
+      transition: all 0.3s ease;
+      text-align: left;
+    }
+
+    .flow-node.active .flow-label {
+      background: rgba(6, 182, 212, 0.1);
+      border-color: var(--accent-cyan);
+      color: #38bdf8;
+      transform: translateX(4px);
+    }
+    .flow-node.completed .flow-label {
+      background: rgba(168, 85, 247, 0.1);
+      border-color: var(--accent-purple);
+      color: #c084fc;
+    }
+
+    .func-content {
+      background: #05070f;
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      border-radius: 12px;
+      padding: 24px;
+      height: 100%;
+    }
+    .func-file {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--accent-amber);
+      margin-bottom: 10px;
+      display: inline-block;
+      background: rgba(245, 158, 11, 0.1);
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+    .func-title { font-size: 1.2rem; font-weight: 700; color: #fff; margin-bottom: 12px; }
+    .func-desc { color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 16px; line-height: 1.5; }
+    
+    .code-block {
+      background: #000;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-left: 3px solid var(--accent-cyan);
+      border-radius: 8px;
+      padding: 16px;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: #e2e8f0;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+    
+    /* CLICKABLE ARCHITECTURE */
+    .arch-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 30px;
+      padding: 20px;
+      position: relative;
+    }
+    @media (max-width: 900px) { .arch-container { grid-template-columns: 1fr; } }
+    
+    .arch-node {
+      background: rgba(255, 255, 255, 0.05);
+      border: 2px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+      z-index: 2;
+    }
+    .arch-node:hover, .arch-node.active {
+      background: rgba(168, 85, 247, 0.15);
+      border-color: var(--accent-purple);
+      box-shadow: 0 0 20px rgba(168, 85, 247, 0.3);
+      transform: translateY(-5px);
+    }
+    .arch-icon { font-size: 2.5rem; margin-bottom: 10px; }
+    .arch-name { font-weight: 700; font-size: 1.1rem; color: #fff; }
+    .arch-file { font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 5px; }
+
+    .arch-details {
+      margin-top: 24px;
+      background: #05070d;
+      border: 1px solid var(--accent-purple);
+      border-radius: 12px;
+      padding: 24px;
+      display: none;
+    }
+    .arch-details.active { display: block; animation: fadeIn 0.3s ease; }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* SANDBOX */
+    .sim-box { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 768px) { .sim-box { grid-template-columns: 1fr; } }
+    .form-group { margin-bottom: 14px; }
+    .form-label { display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 6px; font-weight: 600; }
+    .form-input { width: 100%; background: rgba(8, 10, 16, 0.9); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 14px; color: var(--text-primary); font-family: var(--font-mono); font-size: 0.9rem; }
+    .form-input:focus { outline: none; border-color: var(--accent-purple); }
+    .sim-output { background: #000; border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; font-family: var(--font-mono); font-size: 0.82rem; height: 100%; min-height: 300px; overflow-y: auto; }
+    
+    .ctrl-btn {
+      background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border-color); color: var(--text-primary);
+      padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.2s ease;
+    }
+    .ctrl-btn:hover { background: rgba(255, 255, 255, 0.15); }
+    .ctrl-btn-primary { background: linear-gradient(135deg, var(--accent-purple), var(--accent-indigo)); border: none; color: white; }
+    .ctrl-btn-primary:hover { box-shadow: 0 4px 14px rgba(168, 85, 247, 0.4); }
+
+    /* Syntax Highlighting */
+    .kw { color: #f472b6; } /* keyword */
+    .fn { color: #60a5fa; } /* function */
+    .st { color: #34d399; } /* string */
+    .cm { color: #94a3b8; font-style: italic; } /* comment */
+  </style>
+</head>
+<body>
+
+  <header class="header">
+    <div class="badge-bar">
+      <span class="badge">Stateless TOTP v2</span>
+      <span class="badge badge-cyan">Zero Database Memory</span>
+      <span class="badge badge-amber">For New Developers</span>
+    </div>
+    <h1>⚡ Interactive Service Flow</h1>
+    <p class="subtitle">Understand exactly how the APIs work, function by function.</p>
+    
+    <div class="mode-switch-container">
+      <button class="mode-btn" id="btnModeAnalogy" onclick="switchMode('analogy')">🎈 Analogy</button>
+      <button class="mode-btn active" id="btnModeDeep" onclick="switchMode('deep')">🔬 Developer Deep Dive</button>
+      <button class="mode-btn" id="btnModeArch" onclick="switchMode('arch')">🏗️ Clickable Architecture</button>
+      <button class="mode-btn" id="btnModeSandbox" onclick="switchMode('sandbox')">🧪 Sandbox</button>
+    </div>
+  </header>
+
+  <div class="container">
+
+    <!-- 1. ANALOGY SECTION -->
+    <div class="card" id="secAnalogy" style="display: none;">
+      <h2 style="margin-bottom: 20px; color: #d8b4fe;">🎟️ The Amusement Park Analogy (5th Grade Level)</h2>
+      
+      <div style="background: rgba(168, 85, 247, 0.1); border-left: 4px solid var(--accent-purple); padding: 20px; border-radius: 0 12px 12px 0;">
+        <h3 style="margin-bottom: 10px;">The Old Way vs. The New Way</h3>
+        <p style="margin-bottom: 15px; color: var(--text-secondary);">
+          <strong>The Old Way (Heavy Backpack):</strong> When you ask for an OTP, the server writes down your phone number and OTP in a giant database notebook. If 1,000,000 users arrive, the notebook gets huge, slow, and might crash!
+        </p>
+        <p style="color: var(--text-secondary);">
+          <strong>The New Way (Magic Wax Seal):</strong> The server has ZERO notebooks. When you ask for an OTP, it calculates a code, puts your details inside a <strong>Magic Sealed Envelope (requestToken)</strong> with a secret wax stamp, and hands it back to you! When you return, the server just checks if the wax seal is unbroken.
+        </p>
+      </div>
+    </div>
+
+    <!-- 2. DEVELOPER DEEP DIVE SECTION -->
+    <div class="card" id="secDeep">
+      <div style="margin-bottom: 24px;">
+        <h2 style="font-size: 1.4rem; font-weight: 700; margin-bottom: 8px;">🔬 Function-by-Function Breakdown</h2>
+        <p class="subtitle" style="font-size: 0.95rem;">Select an API below, then click through the sub-steps to see exactly which functions are executed.</p>
+      </div>
+
+      <!-- Main Stepper -->
+      <div class="steps-bar">
+        <div class="step-item active" id="apiStep1" onclick="selectApiStep(1)">
+          <div class="step-num"><span>Step 01</span> 🎟️</div>
+          <div class="step-title">Request OTP</div>
+          <div class="step-desc">POST /sms/requestOTP</div>
+        </div>
+        <div class="step-item" id="apiStep2" onclick="selectApiStep(2)">
+          <div class="step-num"><span>Step 02</span> 🔄</div>
+          <div class="step-title">Resend OTP</div>
+          <div class="step-desc">POST /sms/resendOTP</div>
+        </div>
+        <div class="step-item" id="apiStep3" onclick="selectApiStep(3)">
+          <div class="step-num"><span>Step 03</span> ✅</div>
+          <div class="step-title">Validate OTP</div>
+          <div class="step-desc">POST /sms/validateOTP</div>
+        </div>
+      </div>
+
+      <!-- Execution Layout -->
+      <div class="execution-layout">
+        <!-- Left Column: Flow Diagram -->
+        <div class="execution-flow">
+          <h3 style="margin-bottom: 20px; font-size: 1.1rem; color: #fff; text-align: center;">Execution Flow</h3>
+          <div class="flow-nodes" id="funcTabsContainer">
+            <!-- Injected via JS -->
+          </div>
+          <div style="margin-top: 24px; text-align: center;">
+            <button class="ctrl-btn ctrl-btn-primary" id="btnNextStep" onclick="nextSubStep()" style="width: 100%; font-size: 1rem; padding: 12px;">Next Step &rarr;</button>
+          </div>
+        </div>
+
+        <!-- Right Column: Details -->
+        <div class="execution-details">
+          <div class="func-content" id="funcContentBox">
+            <div class="func-file" id="fFile">controller/sms.controller.js</div>
+            <div class="func-title" id="fTitle">sms.controller.js -> requestOTP</div>
+            <div class="func-desc" id="fDesc">Receives the HTTP request...</div>
+            <div class="code-block" id="fCode">code here</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. CLICKABLE ARCHITECTURE SECTION -->
+    <div class="card" id="secArch" style="display: none;">
+      <h2 style="margin-bottom: 8px; font-size: 1.4rem;">🏗️ Interactive Architecture Map</h2>
+      <p class="subtitle" style="margin-bottom: 24px; font-size: 0.95rem;">Click on any component to see its responsibility and related files.</p>
+
+      <div class="arch-container">
+        <div class="arch-node" onclick="showArch('client', this)">
+          <div class="arch-icon">📱</div>
+          <div class="arch-name">Client App</div>
+          <div class="arch-file">Holds Tokens</div>
+        </div>
+        <div class="arch-node" onclick="showArch('controller', this)">
+          <div class="arch-icon">🛣️</div>
+          <div class="arch-name">API Controller</div>
+          <div class="arch-file">sms.controller.js</div>
+        </div>
+        <div class="arch-node" onclick="showArch('bl', this)">
+          <div class="arch-icon">🧠</div>
+          <div class="arch-name">Business Logic</div>
+          <div class="arch-file">sms.bl.js</div>
+        </div>
+        <div class="arch-node" onclick="showArch('crypto', this)">
+          <div class="arch-icon">🔐</div>
+          <div class="arch-name">Crypto Helpers</div>
+          <div class="arch-file">hmac.helper & totp.helper</div>
+        </div>
+        <div class="arch-node" onclick="showArch('redis', this)">
+          <div class="arch-icon">⚡</div>
+          <div class="arch-name">Redis (Locks only)</div>
+          <div class="arch-file">consumedTokens.js</div>
+        </div>
+        <div class="arch-node" onclick="showArch('sms', this)">
+          <div class="arch-icon">📨</div>
+          <div class="arch-name">SMS Gateway</div>
+          <div class="arch-file">axiosCall.js</div>
+        </div>
+      </div>
+
+      <div class="arch-details" id="archDetailsBox">
+        <h3 id="archTitle" style="color: #fff; margin-bottom: 8px;">Select a component...</h3>
+        <p id="archDesc" style="color: var(--text-secondary); font-size: 0.95rem;">Click on one of the boxes above to learn more.</p>
+      </div>
+    </div>
+
+    <!-- 4. SANDBOX SECTION -->
+    <div class="card" id="secSandbox" style="display: none;">
+      <h2 style="margin-bottom: 20px;">🧪 Interactive API Simulator</h2>
+      <div class="sim-box">
+        <div>
+          <div class="form-group">
+            <label class="form-label">Mobile Number</label>
+            <input type="text" id="simMobile" class="form-input" value="9876543210">
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px;">
+            <button class="ctrl-btn ctrl-btn-primary" onclick="simReq()">1. Request OTP</button>
+            <button class="ctrl-btn" onclick="simRes()">2. Resend OTP</button>
+          </div>
+          <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+            <div class="form-group">
+              <label class="form-label">Enter Received OTP</label>
+              <input type="text" id="simOtpInput" class="form-input" placeholder="6-digit code">
+            </div>
+            <button class="ctrl-btn" style="background: var(--accent-emerald); border:none; color: white;" onclick="simVal()">
+              3. Validate OTP
+            </button>
+          </div>
+        </div>
+        <div>
+          <div class="sim-output" id="simConsole">
+            <span class="cm">// Interactive Sandbox Ready</span><br>
+            <span class="cm">// Zero Server Memory architecture simulated below.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // --- MODE SWITCHING ---
+    function switchMode(mode) {
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('secAnalogy').style.display = 'none';
+      document.getElementById('secDeep').style.display = 'none';
+      document.getElementById('secArch').style.display = 'none';
+      document.getElementById('secSandbox').style.display = 'none';
+
+      if (mode === 'analogy') {
+        document.getElementById('btnModeAnalogy').classList.add('active');
+        document.getElementById('secAnalogy').style.display = 'block';
+      } else if (mode === 'deep') {
+        document.getElementById('btnModeDeep').classList.add('active');
+        document.getElementById('secDeep').style.display = 'block';
+      } else if (mode === 'arch') {
+        document.getElementById('btnModeArch').classList.add('active');
+        document.getElementById('secArch').style.display = 'block';
+      } else if (mode === 'sandbox') {
+        document.getElementById('btnModeSandbox').classList.add('active');
+        document.getElementById('secSandbox').style.display = 'block';
+      }
+    }
+
+    // --- DEVELOPER DEEP DIVE (FUNCTION BY FUNCTION) ---
+    const deepDiveData = {
+      1: [ // REQUEST OTP
+        {
+          tabName: "1. Controller", file: "controller/sms.controller.js", title: "API Entry: requestOtp",
+          desc: "The API endpoint receives the HTTP POST request. It validates the basic schema (e.g., ensuring mobileNumber exists) and passes the data to the Business Logic (BL) layer.",
+          code: `<span class="kw">const</span> <span class="fn">requestOTP</span> = <span class="kw">async</span> (req, res) => {\n  <span class="kw">const</span> response = <span class="kw">await</span> <span class="fn">requestOtpBl</span>(req, res);\n  <span class="kw">return</span> res.status(200).json({ status: <span class="st">"SUCCESS"</span>, data: response });\n};`
+        },
+        {
+          tabName: "2. Lock Check", file: "services/BL/sms.bl.js", title: "Business Logic: requestOtpBl",
+          desc: "The BL layer normalizes the input and creates an 'identityKey'. Before proceeding, it checks Redis using 'isRequestIssued' to ensure the user isn't spamming requests for the same transaction.",
+          code: `<span class="kw">const</span> identityKey = <span class="fn">buildIdentityKey</span>(mobileNumber, email);\n<span class="kw">if</span> (<span class="kw">await</span> <span class="fn">isRequestIssued</span>(mobileNumber, params)) {\n  <span class="kw">throw new</span> ValidationError(<span class="st">"OTP already requested"</span>);\n}`
+        },
+        {
+          tabName: "3. Secret Derivation", file: "utils/helper/totp.helper.js", title: "generateDeterministicSecret()",
+          desc: "Instead of generating a random string and saving it to a database, we derive a secret using HMAC-SHA256 with a Master Key. Because it's deterministic, we can recreate it later!",
+          code: `<span class="kw">const</span> <span class="fn">generateDeterministicSecret</span> = (mobileNumber, params) => {\n  <span class="kw">const</span> hmac = crypto.createHmac(<span class="st">'sha256'</span>, TOTP_MASTER_KEY);\n  hmac.update(\`\${mobileNumber}:\${params}\`);\n  <span class="kw">return</span> hmac.digest(<span class="st">'hex'</span>);\n};`
+        },
+        {
+          tabName: "4. OTP Generation", file: "utils/helper/totp.helper.js", title: "generateOtp()",
+          desc: "Using the generated secret, the 'speakeasy' library calculates the current 6-digit TOTP code based on the current server time (in 30-second windows).",
+          code: `<span class="kw">const</span> <span class="fn">generateOtp</span> = (secret) => {\n  <span class="kw">return</span> speakeasy.totp({\n    secret: secret,\n    encoding: <span class="st">'hex'</span>,\n    step: 30,\n    digits: 6\n  });\n};`
+        },
+        {
+          tabName: "5. Wax Seal (Token)", file: "utils/helper/hmac.helper.js", title: "createRequestToken()",
+          desc: "We package the user's data into a JSON string, encode it, and sign it with HMAC-SHA256. This 'requestToken' acts as the state, meaning the server doesn't have to remember anything!",
+          code: `<span class="kw">const</span> payload = JSON.stringify({ id, mn, p, ts: Date.now() });\n<span class="kw">const</span> b64 = Buffer.from(payload).toString(<span class="st">'base64url'</span>);\n<span class="kw">const</span> sig = crypto.createHmac(<span class="st">'sha256'</span>, REQUEST_TOKEN_SECRET).update(b64).digest(<span class="st">'hex'</span>);\n<span class="kw">return</span> \`\${b64}.\${sig}\`;`
+        },
+        {
+          tabName: "6. SMS Send", file: "services/BL/sms.bl.js", title: "sendNotification()",
+          desc: "Finally, the OTP code is attached to the message data and sent to the external SMS Gateway via an Axios call. The user receives the SMS, and the client app receives the requestToken.",
+          code: `messageData.otp = otp;\n<span class="kw">await</span> <span class="fn">sendNotification</span>({ mobileNumber, messageData });\n<span class="cm">// Respond to client</span>\n<span class="kw">return</span> { requestToken };`
+        }
+      ],
+      2: [ // RESEND OTP
+        {
+          tabName: "1. Controller", file: "controller/sms.controller.js", title: "API Entry: resendOTP",
+          desc: "Client sends POST /sms/resendOTP containing ONLY the requestToken (no mobile number needed, it's inside the token!).",
+          code: `<span class="kw">const</span> <span class="fn">resendOTP</span> = <span class="kw">async</span> (req, res) => {\n  <span class="kw">const</span> response = <span class="kw">await</span> <span class="fn">resendOtpBl</span>(req, res);\n  <span class="kw">return</span> res.status(200).json({ status: <span class="st">"SUCCESS"</span>, data: response });\n};`
+        },
+        {
+          tabName: "2. Verify Seal", file: "utils/helper/hmac.helper.js", title: "verifyRequestToken()",
+          desc: "The server recalculates the HMAC signature to ensure the token wasn't tampered with. It uses a timing-safe comparison to prevent hacking.",
+          code: `<span class="kw">const</span> expectedSig = crypto.createHmac(<span class="st">'sha256'</span>, REQUEST_TOKEN_SECRET).update(b64).digest(<span class="st">'hex'</span>);\n<span class="kw">if</span> (!crypto.timingSafeEqual(Buffer.from(sig, <span class="st">'hex'</span>), Buffer.from(expectedSig, <span class="st">'hex'</span>))) {\n  <span class="kw">return null</span>; <span class="cm">// Invalid seal!</span>\n}`
+        },
+        {
+          tabName: "3. Regenerate", file: "services/BL/sms.bl.js", title: "Re-creating the OTP",
+          desc: "Because the secret generation is deterministic, the server re-runs the exact same math from Step 1 using the data extracted from the verified token.",
+          code: `<span class="kw">const</span> secret = <span class="fn">generateDeterministicSecret</span>(tokenData.identityKey, tokenData.params);\n<span class="kw">const</span> otp = <span class="fn">generateOtp</span>(secret);\n<span class="kw">const</span> newRequestToken = <span class="fn">createRequestToken</span>(tokenData);`
+        }
+      ],
+      3: [ // VALIDATE OTP
+        {
+          tabName: "1. API Input", file: "controller/sms.controller.js", title: "API Entry: validateOTP",
+          desc: "Client submits the requestToken AND the 6-digit OTP code they typed in.",
+          code: `<span class="cm">// req.body contains: { requestToken, otp }</span>\n<span class="kw">const</span> response = <span class="kw">await</span> <span class="fn">validateOtpBl</span>(req, res);`
+        },
+        {
+          tabName: "2. Check OTP", file: "utils/helper/totp.helper.js", title: "verifyOtp()",
+          desc: "Server verifies the requestToken, re-derives the secret, and asks Speakeasy if the provided 6-digit OTP matches the current time window.",
+          code: `<span class="kw">return</span> speakeasy.totp.verify({\n  secret: secret,\n  encoding: <span class="st">'hex'</span>,\n  token: String(userOtp),\n  step: 30,\n  window: 1 <span class="cm">// Allows slight time drift</span>\n});`
+        },
+        {
+          tabName: "3. Burn Session", file: "utils/helper/consumedTokens.js", title: "markAsConsumed()",
+          desc: "To prevent Replay Attacks (using the same OTP twice), the transaction is marked as consumed in Redis.",
+          code: `<span class="kw">const</span> sessionKey = \`\${identityKey}:\${params}\`;\n<span class="kw">await</span> <span class="fn">markAsConsumed</span>(sessionKey, validitySeconds);`
+        },
+        {
+          tabName: "4. Issue VIP Ticket", file: "utils/helper/hmac.helper.js", title: "createSessionToken()",
+          desc: "Finally, the server issues a highly-privileged Session Token (signed with a different secret) to prove the user has successfully authenticated.",
+          code: `<span class="kw">const</span> sig = crypto.createHmac(<span class="st">'sha256'</span>, SESSION_TOKEN_SECRET).update(b64).digest(<span class="st">'hex'</span>);\n<span class="kw">return</span> \`\${b64}.\${sig}\`;`
+        }
+      ]
+    };
+
+    let currentApiStep = 1;
+    let currentSubStep = 0;
+
+    function selectApiStep(apiId) {
+      currentApiStep = apiId;
+      document.querySelectorAll('.step-item').forEach(el => el.classList.remove('active'));
+      document.getElementById('apiStep' + apiId).classList.add('active');
+
+      const tabsContainer = document.getElementById('funcTabsContainer');
+      tabsContainer.innerHTML = '';
+      
+      deepDiveData[apiId].forEach((item, index) => {
+        const node = document.createElement('div');
+        node.className = 'flow-node';
+        node.onclick = () => selectSubStep(index);
+        
+        const dot = document.createElement('div');
+        dot.className = 'flow-dot';
+        dot.innerText = index + 1;
+        
+        const label = document.createElement('div');
+        label.className = 'flow-label';
+        label.innerText = item.tabName;
+        
+        node.appendChild(dot);
+        node.appendChild(label);
+        tabsContainer.appendChild(node);
+      });
+
+      selectSubStep(0);
+    }
+
+    function selectSubStep(index) {
+      currentSubStep = index;
+      const nodes = document.querySelectorAll('.flow-node');
+      
+      nodes.forEach((n, i) => {
+        n.classList.remove('active', 'completed');
+        if (i < index) n.classList.add('completed');
+        if (i === index) n.classList.add('active');
+      });
+
+      const data = deepDiveData[currentApiStep][index];
+      document.getElementById('fFile').innerText = data.file;
+      document.getElementById('fTitle').innerText = data.title;
+      document.getElementById('fDesc').innerText = data.desc;
+      document.getElementById('fCode').innerHTML = data.code;
+      
+      const btn = document.getElementById('btnNextStep');
+      if (index === deepDiveData[currentApiStep].length - 1) {
+        btn.style.display = 'none';
+      } else {
+        btn.style.display = 'block';
+      }
+    }
+
+    function nextSubStep() {
+      if (currentSubStep < deepDiveData[currentApiStep].length - 1) {
+        selectSubStep(currentSubStep + 1);
+      }
+    }
+
+    // --- ARCHITECTURE MAP ---
+    const archData = {
+      client: { title: "📱 Client Application", desc: "The frontend mobile or web app. It stores the `requestToken` and `sessionToken` safely. It never needs to know the user's details for resending, because the server packed everything inside the token!" },
+      controller: { title: "🛣️ API Controller Layer", desc: "Routes HTTP requests to the correct business logic functions. Performs very basic input validation (like checking if the body contains JSON)." },
+      bl: { title: "🧠 Business Logic Layer", desc: "The brain. It orchestrates the flow: checking locks, calling the crypto helpers to derive secrets and tokens, and triggering the SMS dispatch." },
+      crypto: { title: "🔐 Crypto Helpers (TOTP & HMAC)", desc: "Performs the cryptographic math. `totp.helper.js` uses HMAC to derive a deterministic secret and Speakeasy to generate the 6-digit code. `hmac.helper.js` signs tokens using SHA-256 to create tamper-proof 'Wax Seals'." },
+      redis: { title: "⚡ Redis (Transient State)", desc: "Used ONLY for temporary spam locks and replay attack prevention (consumed tokens). It NEVER stores actual OTP codes or user session data, which is why the server is considered 'Stateless'." },
+      sms: { title: "📨 SMS Gateway", desc: "External 3rd party service. We send an Axios request containing the generated OTP to this gateway so they can physically send an SMS to the user's phone." }
+    };
+
+    function showArch(key, el) {
+      document.querySelectorAll('.arch-node').forEach(node => node.classList.remove('active'));
+      el.classList.add('active');
+
+      const box = document.getElementById('archDetailsBox');
+      box.classList.remove('active');
+      
+      setTimeout(() => {
+        document.getElementById('archTitle').innerText = archData[key].title;
+        document.getElementById('archDesc').innerText = archData[key].desc;
+        box.classList.add('active');
+      }, 50);
+    }
+
+    // --- SANDBOX SIMULATOR ---
+    let simToken = null;
+    let simOtp = null;
+
+    function simLog(msg, color="#94a3b8") {
+      const console = document.getElementById('simConsole');
+      const time = new Date().toLocaleTimeString();
+      console.innerHTML += `<div style="color:${color}; margin-top:6px;">[${time}] ${msg}</div>`;
+      console.scrollTop = console.scrollHeight;
+    }
+
+    function simReq() {
+      const mn = document.getElementById('simMobile').value;
+      simOtp = Math.floor(100000 + Math.random() * 900000).toString();
+      simToken = "eyJhbGciOiJIUzI1Ni..._" + btoa(mn);
+      simLog(`🚀 POST /sms/requestOTP sent for ${mn}`, "#38bdf8");
+      simLog(`✅ Generated TOTP: <span style="color:#fbbf24">${simOtp}</span>`, "#34d399");
+      simLog(`✉️ Server returned requestToken: ${simToken}`, "#c084fc");
+      document.getElementById('simOtpInput').value = simOtp;
+    }
+
+    function simRes() {
+      if(!simToken) { simLog("❌ Please request OTP first!", "#f43f5e"); return; }
+      simLog(`🔄 POST /sms/resendOTP (Sending ONLY requestToken)`, "#f59e0b");
+      simLog(`✅ Token verified. Same OTP generated: <span style="color:#fbbf24">${simOtp}</span>`, "#34d399");
+    }
+
+    function simVal() {
+      const input = document.getElementById('simOtpInput').value;
+      if(!simToken) { simLog("❌ No active requestToken!", "#f43f5e"); return; }
+      simLog(`✅ POST /sms/validateOTP with OTP: ${input}`, "#38bdf8");
+      
+      if(input === simOtp) {
+        simLog(`🎉 SUCCESS! OTP matched exactly. Session Token Issued!`, "#10b981");
+      } else {
+        simLog(`❌ FAILED! Invalid OTP.`, "#f43f5e");
+      }
+    }
+
+    // Initialize
+    selectApiStep(1);
+  </script>
+</body>
+</html>
