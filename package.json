@@ -27,7 +27,6 @@
     "ioredis": "^5.11.0",
     "moment-timezone": "^0.5.44",
     "node-cache": "^5.1.2",
-    "speakeasy": "^2.0.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"
   },

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stateless TOTP Service - Interactive Developer Guide</title>
+  <title>HTOTP v2 Service - Interactive Developer Guide</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -19,6 +19,7 @@
       --accent-cyan: #06b6d4;
       --accent-emerald: #10b981;
       --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
       --text-primary: #f8fafc;
       --text-secondary: #94a3b8;
       --text-muted: #64748b;
@@ -75,6 +76,7 @@
     .badge-cyan { background: rgba(6, 182, 212, 0.15); border-color: rgba(6, 182, 212, 0.3); color: #38bdf8; }
     .badge-green { background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); color: #34d399; }
     .badge-amber { background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.3); color: #fbbf24; }
+    .badge-rose { background: rgba(244, 63, 94, 0.15); border-color: rgba(244, 63, 94, 0.3); color: #fb7185; }
 
     h1 {
       font-size: 2.2rem;
@@ -148,7 +150,7 @@
     .step-title { font-weight: 700; font-size: 1.1rem; color: var(--text-primary); }
     .step-desc { font-size: 0.85rem; color: var(--text-secondary); margin-top: 2px; }
 
-    /* DEEP DIVE SECTION (Function by Function) */
+    /* DEEP DIVE SECTION */
     .execution-layout {
       display: grid;
       grid-template-columns: 280px 1fr;
@@ -174,7 +176,6 @@
       gap: 16px;
     }
 
-    /* Vertical line connecting nodes */
     .flow-nodes::before {
       content: '';
       position: absolute;
@@ -335,7 +336,7 @@
     .form-label { display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 6px; font-weight: 600; }
     .form-input { width: 100%; background: rgba(8, 10, 16, 0.9); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 14px; color: var(--text-primary); font-family: var(--font-mono); font-size: 0.9rem; }
     .form-input:focus { outline: none; border-color: var(--accent-purple); }
-    .sim-output { background: #000; border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; font-family: var(--font-mono); font-size: 0.82rem; height: 100%; min-height: 300px; overflow-y: auto; }
+    .sim-output { background: #000; border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; font-family: var(--font-mono); font-size: 0.82rem; height: 100%; min-height: 400px; overflow-y: auto; }
     
     .ctrl-btn {
       background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border-color); color: var(--text-primary);
@@ -346,22 +347,23 @@
     .ctrl-btn-primary:hover { box-shadow: 0 4px 14px rgba(168, 85, 247, 0.4); }
 
     /* Syntax Highlighting */
-    .kw { color: #f472b6; } /* keyword */
-    .fn { color: #60a5fa; } /* function */
-    .st { color: #34d399; } /* string */
-    .cm { color: #94a3b8; font-style: italic; } /* comment */
+    .kw { color: #f472b6; } 
+    .fn { color: #60a5fa; } 
+    .st { color: #34d399; } 
+    .cm { color: #94a3b8; font-style: italic; } 
   </style>
 </head>
 <body>
 
   <header class="header">
     <div class="badge-bar">
-      <span class="badge">Stateless TOTP v2</span>
-      <span class="badge badge-cyan">Zero Database Memory</span>
+      <span class="badge">HTOTP v2 Engine</span>
+      <span class="badge badge-cyan">HKDF Cryptography</span>
+      <span class="badge badge-rose">Brute-Force Protected</span>
       <span class="badge badge-amber">For New Developers</span>
     </div>
-    <h1>⚡ Interactive Service Flow</h1>
-    <p class="subtitle">Understand exactly how the APIs work, function by function.</p>
+    <h1>⚡ Interactive HTOTP Architecture</h1>
+    <p class="subtitle">Understand exactly how the Hybrid Time-Nonce APIs work, function by function.</p>
     
     <div class="mode-switch-container">
       <button class="mode-btn" id="btnModeAnalogy" onclick="switchMode('analogy')">🎈 Analogy</button>
@@ -375,15 +377,18 @@
 
     <!-- 1. ANALOGY SECTION -->
     <div class="card" id="secAnalogy" style="display: none;">
-      <h2 style="margin-bottom: 20px; color: #d8b4fe;">🎟️ The Amusement Park Analogy (5th Grade Level)</h2>
+      <h2 style="margin-bottom: 20px; color: #d8b4fe;">🎟️ The HTOTP Analogy (5th Grade Level)</h2>
       
       <div style="background: rgba(168, 85, 247, 0.1); border-left: 4px solid var(--accent-purple); padding: 20px; border-radius: 0 12px 12px 0;">
-        <h3 style="margin-bottom: 10px;">The Old Way vs. The New Way</h3>
+        <h3 style="margin-bottom: 10px;">The Magical Lockbox</h3>
         <p style="margin-bottom: 15px; color: var(--text-secondary);">
-          <strong>The Old Way (Heavy Backpack):</strong> When you ask for an OTP, the server writes down your phone number and OTP in a giant database notebook. If 1,000,000 users arrive, the notebook gets huge, slow, and might crash!
+          <strong>The Nonce (The Shiny Sticker):</strong> When you ask for an OTP, we print a shiny sticker that can only be used once. If you hand it to the bouncer and successfully get in, they rip it up.
+        </p>
+        <p style="margin-bottom: 15px; color: var(--text-secondary);">
+          <strong>HKDF Key Derivation (Play-Doh Mixing):</strong> The server has a huge lump of blue Play-Doh (Master Key). For every request, it mixes a tiny piece of it with unique glitter (your phone number + sticker number) to make a brand new, one-time color just for you.
         </p>
         <p style="color: var(--text-secondary);">
-          <strong>The New Way (Magic Wax Seal):</strong> The server has ZERO notebooks. When you ask for an OTP, it calculates a code, puts your details inside a <strong>Magic Sealed Envelope (requestToken)</strong> with a secret wax stamp, and hands it back to you! When you return, the server just checks if the wax seal is unbroken.
+          <strong>Stateless Attempt Counter (3 Lives):</strong> You receive a <strong>Magic Sealed Envelope (requestToken)</strong> with 3 lives drawn on the outside. Every time you guess the OTP wrong, the bouncer crosses out one life with a sharpie and seals it again. At 0, the game is over.
         </p>
       </div>
     </div>
@@ -400,23 +405,22 @@
         <div class="step-item active" id="apiStep1" onclick="selectApiStep(1)">
           <div class="step-num"><span>Step 01</span> 🎟️</div>
           <div class="step-title">Request OTP</div>
-          <div class="step-desc">POST /sms/requestOTP</div>
+          <div class="step-desc">POST /request-otp</div>
         </div>
         <div class="step-item" id="apiStep2" onclick="selectApiStep(2)">
           <div class="step-num"><span>Step 02</span> 🔄</div>
           <div class="step-title">Resend OTP</div>
-          <div class="step-desc">POST /sms/resendOTP</div>
+          <div class="step-desc">POST /resend-otp</div>
         </div>
         <div class="step-item" id="apiStep3" onclick="selectApiStep(3)">
           <div class="step-num"><span>Step 03</span> ✅</div>
           <div class="step-title">Validate OTP</div>
-          <div class="step-desc">POST /sms/validateOTP</div>
+          <div class="step-desc">POST /validate-otp</div>
         </div>
       </div>
 
       <!-- Execution Layout -->
       <div class="execution-layout">
-        <!-- Left Column: Flow Diagram -->
         <div class="execution-flow">
           <h3 style="margin-bottom: 20px; font-size: 1.1rem; color: #fff; text-align: center;">Execution Flow</h3>
           <div class="flow-nodes" id="funcTabsContainer">
@@ -427,7 +431,6 @@
           </div>
         </div>
 
-        <!-- Right Column: Details -->
         <div class="execution-details">
           <div class="func-content" id="funcContentBox">
             <div class="func-file" id="fFile">controller/sms.controller.js</div>
@@ -442,13 +445,13 @@
     <!-- 3. CLICKABLE ARCHITECTURE SECTION -->
     <div class="card" id="secArch" style="display: none;">
       <h2 style="margin-bottom: 8px; font-size: 1.4rem;">🏗️ Interactive Architecture Map</h2>
-      <p class="subtitle" style="margin-bottom: 24px; font-size: 0.95rem;">Click on any component to see its responsibility and related files.</p>
+      <p class="subtitle" style="margin-bottom: 24px; font-size: 0.95rem;">Click on any component to see its HTOTP v2 responsibility.</p>
 
       <div class="arch-container">
         <div class="arch-node" onclick="showArch('client', this)">
           <div class="arch-icon">📱</div>
           <div class="arch-name">Client App</div>
-          <div class="arch-file">Holds Tokens</div>
+          <div class="arch-file">Token Holder</div>
         </div>
         <div class="arch-node" onclick="showArch('controller', this)">
           <div class="arch-icon">🛣️</div>
@@ -462,18 +465,18 @@
         </div>
         <div class="arch-node" onclick="showArch('crypto', this)">
           <div class="arch-icon">🔐</div>
-          <div class="arch-name">Crypto Helpers</div>
-          <div class="arch-file">hmac.helper & totp.helper</div>
+          <div class="arch-name">HKDF Engine</div>
+          <div class="arch-file">htotp.helper.js</div>
         </div>
         <div class="arch-node" onclick="showArch('redis', this)">
-          <div class="arch-icon">⚡</div>
-          <div class="arch-name">Redis (Locks only)</div>
+          <div class="arch-icon">🗄️</div>
+          <div class="arch-name">Nonce Blacklist</div>
           <div class="arch-file">consumedTokens.js</div>
         </div>
-        <div class="arch-node" onclick="showArch('sms', this)">
-          <div class="arch-icon">📨</div>
-          <div class="arch-name">SMS Gateway</div>
-          <div class="arch-file">axiosCall.js</div>
+        <div class="arch-node" onclick="showArch('hmac', this)">
+          <div class="arch-icon">🎒</div>
+          <div class="arch-name">State Manager</div>
+          <div class="arch-file">hmac.helper.js</div>
         </div>
       </div>
 
@@ -485,7 +488,7 @@
 
     <!-- 4. SANDBOX SECTION -->
     <div class="card" id="secSandbox" style="display: none;">
-      <h2 style="margin-bottom: 20px;">🧪 Interactive API Simulator</h2>
+      <h2 style="margin-bottom: 20px;">🧪 Interactive HTOTP Simulator</h2>
       <div class="sim-box">
         <div>
           <div class="form-group">
@@ -501,15 +504,18 @@
               <label class="form-label">Enter Received OTP</label>
               <input type="text" id="simOtpInput" class="form-input" placeholder="6-digit code">
             </div>
-            <button class="ctrl-btn" style="background: var(--accent-emerald); border:none; color: white;" onclick="simVal()">
+            <button class="ctrl-btn" style="background: var(--accent-emerald); border:none; color: white; width: 100%; margin-bottom: 8px;" onclick="simVal()">
               3. Validate OTP
+            </button>
+            <button class="ctrl-btn" style="background: var(--accent-rose); border:none; color: white; width: 100%;" onclick="simValWrong()">
+              [Hack] Send Wrong OTP (Simulate Brute Force)
             </button>
           </div>
         </div>
         <div>
           <div class="sim-output" id="simConsole">
-            <span class="cm">// Interactive Sandbox Ready</span><br>
-            <span class="cm">// Zero Server Memory architecture simulated below.</span>
+            <span class="cm">// Interactive HTOTP Sandbox Ready</span><br>
+            <span class="cm">// Zero Database Architecture with Brute-Force prevention.</span>
           </div>
         </div>
       </div>
@@ -518,6 +524,7 @@
   </div>
 
   <script>
+
     // --- MODE SWITCHING ---
     function switchMode(mode) {
       document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
@@ -546,72 +553,72 @@
       1: [ // REQUEST OTP
         {
           tabName: "1. Controller", file: "controller/sms.controller.js", title: "API Entry: requestOtp",
-          desc: "The API endpoint receives the HTTP POST request. It validates the basic schema (e.g., ensuring mobileNumber exists) and passes the data to the Business Logic (BL) layer.",
-          code: `<span class="kw">const</span> <span class="fn">requestOTP</span> = <span class="kw">async</span> (req, res) => {\n  <span class="kw">const</span> response = <span class="kw">await</span> <span class="fn">requestOtpBl</span>(req, res);\n  <span class="kw">return</span> res.status(200).json({ status: <span class="st">"SUCCESS"</span>, data: response });\n};`
+          desc: "The API endpoint receives the POST request. It validates the basic schema and passes the data to the Business Logic (BL) layer.",
+          code: "<span class=\"kw\">const</span> <span class=\"fn\">requestOTP</span> = <span class=\"kw\">async</span> (req, res) => {\n  <span class=\"kw\">const</span> response = <span class=\"kw\">await</span> <span class=\"fn\">requestOtpBl</span>(req, res);\n  <span class=\"kw\">return</span> res.status(200).json({ status: <span class=\"st\">\"SUCCESS\"</span>, data: response });\n};"
         },
         {
-          tabName: "2. Lock Check", file: "services/BL/sms.bl.js", title: "Business Logic: requestOtpBl",
-          desc: "The BL layer normalizes the input and creates an 'identityKey'. Before proceeding, it checks Redis using 'isRequestIssued' to ensure the user isn't spamming requests for the same transaction.",
-          code: `<span class="kw">const</span> identityKey = <span class="fn">buildIdentityKey</span>(mobileNumber, email);\n<span class="kw">if</span> (<span class="kw">await</span> <span class="fn">isRequestIssued</span>(mobileNumber, params)) {\n  <span class="kw">throw new</span> ValidationError(<span class="st">"OTP already requested"</span>);\n}`
+          tabName: "2. Generate Nonce", file: "utils/helper/htotp.helper.js", title: "generateNonce()",
+          desc: "The HTOTP engine generates a random 20-character cryptographic string (the shiny sticker). This ensures complete uniqueness for every request.",
+          code: "<span class=\"kw\">const</span> nonce = crypto.randomBytes(15).toString(<span class=\"st\">'base64url'</span>);\n<span class=\"cm\">// Example: aB3kL9xmPq7RtW2nYsZv</span>"
         },
         {
-          tabName: "3. Secret Derivation", file: "utils/helper/totp.helper.js", title: "generateDeterministicSecret()",
-          desc: "Instead of generating a random string and saving it to a database, we derive a secret using HMAC-SHA256 with a Master Key. Because it's deterministic, we can recreate it later!",
-          code: `<span class="kw">const</span> <span class="fn">generateDeterministicSecret</span> = (mobileNumber, params) => {\n  <span class="kw">const</span> hmac = crypto.createHmac(<span class="st">'sha256'</span>, TOTP_MASTER_KEY);\n  hmac.update(\`\${mobileNumber}:\${params}\`);\n  <span class="kw">return</span> hmac.digest(<span class="st">'hex'</span>);\n};`
+          tabName: "3. HKDF Key Derivation", file: "utils/helper/htotp.helper.js", title: "deriveKey()",
+          desc: "Using the RFC 5869 HKDF standard, we mix the Master Key with the user's mobile number, channel, and nonce (Salt) to derive a brand new, one-time 256-bit key.",
+          code: "<span class=\"kw\">const</span> salt = `${channel}:${identity}:${nonce}`;\n<span class=\"kw\">const</span> derivedKey = crypto.hkdfSync(\n  <span class=\"st\">'sha256'</span>, MASTER_KEY, salt, <span class=\"st\">'HTOTP-v1'</span>, 32\n);"
         },
         {
-          tabName: "4. OTP Generation", file: "utils/helper/totp.helper.js", title: "generateOtp()",
-          desc: "Using the generated secret, the 'speakeasy' library calculates the current 6-digit TOTP code based on the current server time (in 30-second windows).",
-          code: `<span class="kw">const</span> <span class="fn">generateOtp</span> = (secret) => {\n  <span class="kw">return</span> speakeasy.totp({\n    secret: secret,\n    encoding: <span class="st">'hex'</span>,\n    step: 30,\n    digits: 6\n  });\n};`
+          tabName: "4. OTP Generation", file: "utils/helper/htotp.helper.js", title: "generateHtotpCode()",
+          desc: "We generate a standard time-based hash, but importantly bind it to the TxContext. If a hacker intercepts a LOGIN OTP, they can't use it for FUND_TRANSFER.",
+          code: "<span class=\"kw\">const</span> message = `${timeStep}:${nonce}:${txContext}`;\n<span class=\"kw\">const</span> hash = crypto.createHmac(<span class=\"st\">'sha256'</span>, derivedKey).update(message).digest();\n<span class=\"kw\">return</span> <span class=\"fn\">dynamicTruncate</span>(hash); <span class=\"cm\">// Returns 6 digits</span>"
         },
         {
           tabName: "5. Wax Seal (Token)", file: "utils/helper/hmac.helper.js", title: "createRequestToken()",
-          desc: "We package the user's data into a JSON string, encode it, and sign it with HMAC-SHA256. This 'requestToken' acts as the state, meaning the server doesn't have to remember anything!",
-          code: `<span class="kw">const</span> payload = JSON.stringify({ id, mn, p, ts: Date.now() });\n<span class="kw">const</span> b64 = Buffer.from(payload).toString(<span class="st">'base64url'</span>);\n<span class="kw">const</span> sig = crypto.createHmac(<span class="st">'sha256'</span>, REQUEST_TOKEN_SECRET).update(b64).digest(<span class="st">'hex'</span>);\n<span class="kw">return</span> \`\${b64}.\${sig}\`;`
+          desc: "We package the nonce, txContext, and attempts (att: 3) into a JSON string, encode it, and sign it with HMAC-SHA256.",
+          code: "<span class=\"kw\">const</span> payload = JSON.stringify({ nonce, txContext, att: 3, exp });\n<span class=\"kw\">const</span> b64 = Buffer.from(payload).toString(<span class=\"st\">'base64url'</span>);\n<span class=\"kw\">const</span> sig = crypto.createHmac(<span class=\"st\">'sha256'</span>, SIGNING_KEY).update(b64).digest(<span class=\"st\">'hex'</span>);\n<span class=\"kw\">return</span> `${b64}.${sig}`;"
         },
         {
           tabName: "6. SMS Send", file: "services/BL/sms.bl.js", title: "sendNotification()",
-          desc: "Finally, the OTP code is attached to the message data and sent to the external SMS Gateway via an Axios call. The user receives the SMS, and the client app receives the requestToken.",
-          code: `messageData.otp = otp;\n<span class="kw">await</span> <span class="fn">sendNotification</span>({ mobileNumber, messageData });\n<span class="cm">// Respond to client</span>\n<span class="kw">return</span> { requestToken };`
+          desc: "The HTOTP code is sent to the SMS Gateway. The user gets the SMS, and the client app gets the requestToken.",
+          code: "messageData.otp = otp;\n<span class=\"kw\">await</span> <span class=\"fn\">sendNotification</span>({ mobileNumber, messageData });\n<span class=\"kw\">return</span> { requestToken };"
         }
       ],
       2: [ // RESEND OTP
         {
           tabName: "1. Controller", file: "controller/sms.controller.js", title: "API Entry: resendOTP",
-          desc: "Client sends POST /sms/resendOTP containing ONLY the requestToken (no mobile number needed, it's inside the token!).",
-          code: `<span class="kw">const</span> <span class="fn">resendOTP</span> = <span class="kw">async</span> (req, res) => {\n  <span class="kw">const</span> response = <span class="kw">await</span> <span class="fn">resendOtpBl</span>(req, res);\n  <span class="kw">return</span> res.status(200).json({ status: <span class="st">"SUCCESS"</span>, data: response });\n};`
+          desc: "Client sends POST /resend-otp containing ONLY the requestToken (no mobile number needed!).",
+          code: "<span class=\"kw\">const</span> response = <span class=\"kw\">await</span> <span class=\"fn\">resendOtpBl</span>(req, res);"
         },
         {
           tabName: "2. Verify Seal", file: "utils/helper/hmac.helper.js", title: "verifyRequestToken()",
-          desc: "The server recalculates the HMAC signature to ensure the token wasn't tampered with. It uses a timing-safe comparison to prevent hacking.",
-          code: `<span class="kw">const</span> expectedSig = crypto.createHmac(<span class="st">'sha256'</span>, REQUEST_TOKEN_SECRET).update(b64).digest(<span class="st">'hex'</span>);\n<span class="kw">if</span> (!crypto.timingSafeEqual(Buffer.from(sig, <span class="st">'hex'</span>), Buffer.from(expectedSig, <span class="st">'hex'</span>))) {\n  <span class="kw">return null</span>; <span class="cm">// Invalid seal!</span>\n}`
+          desc: "The server recalculates the HMAC signature to ensure the token wasn't tampered with. If an attacker changes 'attempts' to 99, this fails.",
+          code: "<span class=\"kw\">if</span> (!crypto.timingSafeEqual(calculatedSig, providedSig)) {\n  <span class=\"kw\">throw new</span> Error(<span class=\"st\">\"Invalid Token Signature!\"</span>);\n}"
         },
         {
-          tabName: "3. Regenerate", file: "services/BL/sms.bl.js", title: "Re-creating the OTP",
-          desc: "Because the secret generation is deterministic, the server re-runs the exact same math from Step 1 using the data extracted from the verified token.",
-          code: `<span class="kw">const</span> secret = <span class="fn">generateDeterministicSecret</span>(tokenData.identityKey, tokenData.params);\n<span class="kw">const</span> otp = <span class="fn">generateOtp</span>(secret);\n<span class="kw">const</span> newRequestToken = <span class="fn">createRequestToken</span>(tokenData);`
+          tabName: "3. Regenerate", file: "services/BL/sms.bl.js", title: "New Nonce, New Life",
+          desc: "Unlike standard TOTP, HTOTP generates a completely NEW nonce on resend. This derives a new key, generating a completely different OTP.",
+          code: "<span class=\"kw\">const</span> newNonce = <span class=\"fn\">generateNonce</span>();\n<span class=\"kw\">const</span> newKey = <span class=\"fn\">deriveKey</span>(MASTER, saltWithNewNonce);\n<span class=\"kw\">const</span> newOtp = <span class=\"fn\">generateHtotpCode</span>(newKey, ...);"
         }
       ],
       3: [ // VALIDATE OTP
         {
           tabName: "1. API Input", file: "controller/sms.controller.js", title: "API Entry: validateOTP",
-          desc: "Client submits the requestToken AND the 6-digit OTP code they typed in.",
-          code: `<span class="cm">// req.body contains: { requestToken, otp }</span>\n<span class="kw">const</span> response = <span class="kw">await</span> <span class="fn">validateOtpBl</span>(req, res);`
+          desc: "Client submits the requestToken AND the 6-digit OTP code.",
+          code: "<span class=\"kw\">const</span> response = <span class=\"kw\">await</span> <span class=\"fn\">validateOtpBl</span>(req, res);"
         },
         {
-          tabName: "2. Check OTP", file: "utils/helper/totp.helper.js", title: "verifyOtp()",
-          desc: "Server verifies the requestToken, re-derives the secret, and asks Speakeasy if the provided 6-digit OTP matches the current time window.",
-          code: `<span class="kw">return</span> speakeasy.totp.verify({\n  secret: secret,\n  encoding: <span class="st">'hex'</span>,\n  token: String(userOtp),\n  step: 30,\n  window: 1 <span class="cm">// Allows slight time drift</span>\n});`
+          tabName: "2. Nonce Blacklist", file: "utils/helper/consumedTokens.js", title: "isConsumed()",
+          desc: "Prevents Replay Attacks! The server asks Redis: 'Has this sticker (nonce) been used before?'. If yes, it aborts immediately.",
+          code: "<span class=\"kw\">const</span> isUsed = <span class=\"kw\">await</span> <span class=\"fn\">isConsumed</span>(tokenData.nonce);\n<span class=\"kw\">if</span> (isUsed) <span class=\"kw\">throw new</span> Error(<span class=\"st\">\"OTP already validated!\"</span>);"
         },
         {
-          tabName: "3. Burn Session", file: "utils/helper/consumedTokens.js", title: "markAsConsumed()",
-          desc: "To prevent Replay Attacks (using the same OTP twice), the transaction is marked as consumed in Redis.",
-          code: `<span class="kw">const</span> sessionKey = \`\${identityKey}:\${params}\`;\n<span class="kw">await</span> <span class="fn">markAsConsumed</span>(sessionKey, validitySeconds);`
+          tabName: "3. Check OTP", file: "utils/helper/htotp.helper.js", title: "verifyHtotp()",
+          desc: "Server re-derives the key and recalculates the OTP. If the user provided the wrong OTP, we decrement the attempts inside the token!",
+          code: "<span class=\"kw\">if</span> (otp !== expectedOtp) {\n  <span class=\"kw\">const</span> newToken = <span class=\"fn\">decrementAttempts</span>(tokenData);\n  <span class=\"kw\">throw new</span> Error(<span class=\"st\">\"Invalid OTP\"</span>, { requestToken: newToken });\n}"
         },
         {
-          tabName: "4. Issue VIP Ticket", file: "utils/helper/hmac.helper.js", title: "createSessionToken()",
-          desc: "Finally, the server issues a highly-privileged Session Token (signed with a different secret) to prove the user has successfully authenticated.",
-          code: `<span class="kw">const</span> sig = crypto.createHmac(<span class="st">'sha256'</span>, SESSION_TOKEN_SECRET).update(b64).digest(<span class="st">'hex'</span>);\n<span class="kw">return</span> \`\${b64}.\${sig}\`;`
+          tabName: "4. Burn Nonce", file: "utils/helper/consumedTokens.js", title: "markAsConsumed()",
+          desc: "If the OTP was right, we instantly write the Nonce to the Redis blacklist so it can never be used again.",
+          code: "<span class=\"kw\">await</span> <span class=\"fn\">markAsConsumed</span>(tokenData.nonce, TTL_120_SEC);"
         }
       ]
     };
@@ -680,12 +687,12 @@
 
     // --- ARCHITECTURE MAP ---
     const archData = {
-      client: { title: "📱 Client Application", desc: "The frontend mobile or web app. It stores the `requestToken` and `sessionToken` safely. It never needs to know the user's details for resending, because the server packed everything inside the token!" },
-      controller: { title: "🛣️ API Controller Layer", desc: "Routes HTTP requests to the correct business logic functions. Performs very basic input validation (like checking if the body contains JSON)." },
-      bl: { title: "🧠 Business Logic Layer", desc: "The brain. It orchestrates the flow: checking locks, calling the crypto helpers to derive secrets and tokens, and triggering the SMS dispatch." },
-      crypto: { title: "🔐 Crypto Helpers (TOTP & HMAC)", desc: "Performs the cryptographic math. `totp.helper.js` uses HMAC to derive a deterministic secret and Speakeasy to generate the 6-digit code. `hmac.helper.js` signs tokens using SHA-256 to create tamper-proof 'Wax Seals'." },
-      redis: { title: "⚡ Redis (Transient State)", desc: "Used ONLY for temporary spam locks and replay attack prevention (consumed tokens). It NEVER stores actual OTP codes or user session data, which is why the server is considered 'Stateless'." },
-      sms: { title: "📨 SMS Gateway", desc: "External 3rd party service. We send an Axios request containing the generated OTP to this gateway so they can physically send an SMS to the user's phone." }
+      client: { title: "📱 Client Application", desc: "The frontend mobile or web app. It receives the stateless `requestToken`. If an OTP is guessed wrong, the server hands back a new token with fewer lives!" },
+      controller: { title: "🛣️ API Controller Layer", desc: "Routes HTTP requests to the correct business logic. Critically handles passing the decremented token back to the client during a 400 Bad Request." },
+      bl: { title: "🧠 Business Logic Layer", desc: "Orchestrates the HTOTP generation, verifies the Channel Binding (IP/UA fingerprint), and manages error mapping." },
+      crypto: { title: "🔐 HKDF Engine (htotp.helper)", desc: "The core cryptographic engine. Implements RFC 5869 (HKDF) to derive unique keys per request and generates dynamically truncated OTP hashes." },
+      redis: { title: "🗄️ Redis (Nonce Blacklist)", desc: "Prevents Replay Attacks. When an OTP is validated, the 20-character 'nonce' is burned into Redis. Subsequent attempts using that nonce are violently rejected." },
+      hmac: { title: "🎒 State Manager (hmac.helper)", desc: "Manages the stateless architecture by signing the JSON payload into a JWT-style token. It handles the decrementing of the 'attempts' counter securely." }
     };
 
     function showArch(key, el) {
@@ -705,6 +712,7 @@
     // --- SANDBOX SIMULATOR ---
     let simToken = null;
     let simOtp = null;
+    let simAttempts = 0;
 
     function simLog(msg, color="#94a3b8") {
       const console = document.getElementById('simConsole');
@@ -716,33 +724,65 @@
     function simReq() {
       const mn = document.getElementById('simMobile').value;
       simOtp = Math.floor(100000 + Math.random() * 900000).toString();
-      simToken = "eyJhbGciOiJIUzI1Ni..._" + btoa(mn);
-      simLog(`🚀 POST /sms/requestOTP sent for ${mn}`, "#38bdf8");
-      simLog(`✅ Generated TOTP: <span style="color:#fbbf24">${simOtp}</span>`, "#34d399");
-      simLog(`✉️ Server returned requestToken: ${simToken}`, "#c084fc");
+      simAttempts = 3;
+      simToken = `eyJhbGciOiJIUzI1Ni.att_${simAttempts}.sig_x9f`;
+      simLog(`🚀 POST /request-otp sent for ${mn}`, "#38bdf8");
+      simLog(`✅ HTOTP Engine generated OTP: <span style="color:#fbbf24">${simOtp}</span>`, "#34d399");
+      simLog(`✉️ requestToken created with <span style="color:#fbbf24">${simAttempts} attempts</span>: ${simToken}`, "#c084fc");
       document.getElementById('simOtpInput').value = simOtp;
     }
 
     function simRes() {
       if(!simToken) { simLog("❌ Please request OTP first!", "#f43f5e"); return; }
-      simLog(`🔄 POST /sms/resendOTP (Sending ONLY requestToken)`, "#f59e0b");
-      simLog(`✅ Token verified. Same OTP generated: <span style="color:#fbbf24">${simOtp}</span>`, "#34d399");
+      if(simAttempts <= 0) { simLog("❌ Token is dead! Max attempts reached.", "#f43f5e"); return; }
+      
+      simOtp = Math.floor(100000 + Math.random() * 900000).toString();
+      simToken = `eyJhbGciOiJIUzI1Ni.att_${simAttempts}.sig_y2h`;
+      
+      simLog(`🔄 POST /resend-otp (Sending requestToken)`, "#f59e0b");
+      simLog(`✅ HKDF Engine derived NEW KEY with NEW NONCE!`, "#34d399");
+      simLog(`✅ NEW OTP generated: <span style="color:#fbbf24">${simOtp}</span>`, "#34d399");
+      document.getElementById('simOtpInput').value = simOtp;
     }
 
     function simVal() {
       const input = document.getElementById('simOtpInput').value;
       if(!simToken) { simLog("❌ No active requestToken!", "#f43f5e"); return; }
-      simLog(`✅ POST /sms/validateOTP with OTP: ${input}`, "#38bdf8");
+      if(simAttempts <= 0) { simLog("❌ Token is dead! Max attempts reached.", "#f43f5e"); return; }
+      
+      simLog(`✅ POST /validate-otp with OTP: ${input}`, "#38bdf8");
       
       if(input === simOtp) {
-        simLog(`🎉 SUCCESS! OTP matched exactly. Session Token Issued!`, "#10b981");
+        simLog(`🎉 SUCCESS! OTP matched.`, "#10b981");
+        simLog(`🔥 Nonce burned in Redis! Token can never be used again.`, "#f59e0b");
+        simToken = null; // Consume it
       } else {
-        simLog(`❌ FAILED! Invalid OTP.`, "#f43f5e");
+        handleWrongOtp();
+      }
+    }
+
+    function simValWrong() {
+      if(!simToken) { simLog("❌ No active requestToken!", "#f43f5e"); return; }
+      if(simAttempts <= 0) { simLog("❌ Token is dead! Max attempts reached.", "#f43f5e"); return; }
+      simLog(`🚨 HACKER SIMULATION: Trying random OTP 000000`, "#fb7185");
+      handleWrongOtp();
+    }
+
+    function handleWrongOtp() {
+      simAttempts--;
+      if (simAttempts > 0) {
+        simToken = `eyJhbGciOiJIUzI1Ni.att_${simAttempts}.sig_z${simAttempts}k`;
+        simLog(`❌ FAILED! Invalid OTP. Server decrements attempts.`, "#fb7185");
+        simLog(`✉️ Server returned NEW requestToken with <span style="color:#fbbf24">${simAttempts} attempts</span> left.`, "#c084fc");
+      } else {
+        simToken = `eyJhbGciOiJIUzI1Ni.att_0.sig_dead`;
+        simLog(`💀 FATAL! 0 attempts left. Token is cryptographically dead. Request a new OTP.`, "#f43f5e");
       }
     }
 
     // Initialize
     selectApiStep(1);
-  </script>
+
+</script>
 </body>
 </html>

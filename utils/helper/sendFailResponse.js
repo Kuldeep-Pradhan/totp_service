@@ -11,5 +11,12 @@ module.exports = (error, req, res) => {
     errorObj: error?.errObj || {},
     errorCode: error?.errorCode
   };
+
+  // Include updated requestToken in response when OTP validation fails
+  // (stateless attempt decrement — client needs the new token to retry)
+  if (error.requestToken) {
+    response.requestToken = error.requestToken;
+  }
+
   res.status(error.statusCode).send(response);
 };

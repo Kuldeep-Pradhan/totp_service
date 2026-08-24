@@ -7,11 +7,11 @@ class SmsController extends BaseController {
      * @swagger
      * /NSDLMA/otp-service/request-otp:
      *   post:
-     *     summary: Request a new OTP
+     *     summary: Request a new HTOTP
      *     description: |
-     *       Generates a TOTP-based OTP for the given mobileNumber + params combination.
+     *       Generates a Hybrid Time-Nonce OTP (HTOTP) for the given identity + params combination.
      *       Returns a signed `requestToken` that the client must present for resend/validate.
-     *       **No server-side storage** — all state is in the token.
+     *       Includes a stateless attempt counter and cryptographic transaction binding.
      *     tags: [OTP]
      *     requestBody:
      *       required: true
@@ -19,8 +19,13 @@ class SmsController extends BaseController {
      *         application/json:
      *           schema:
      *             type: object
-     *             required: [user_name, mobileNumber, params, feature, operationPerformed, messageData]
+     *             required: [user_name, feature, operationPerformed, messageData]
      *             properties:
+     *               channel:
+     *                 type: string
+     *                 enum: [SMS, EMAIL, DUAL]
+     *                 description: The delivery channel. Determines which contacts are required.
+     *                 example: "SMS"
      *               user_name:
      *                 type: string
      *                 example: "john_doe"
@@ -189,7 +194,21 @@ class SmsController extends BaseController {
      *                   type: string
      *                   description: HMAC-signed proof of successful validation
      *       400:
-     *         description: Invalid/expired OTP or token
+     *         description: Invalid/expired OTP or token. If the OTP is wrong but attempts remain, returns a new `requestToken` with decremented attempts.
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 success:
+     *                   type: boolean
+     *                   example: false
+     *                 message:
+     *                   type: string
+     *                   example: "Invalid OTP. 2 attempt(s) remaining."
+     *                 requestToken:
+     *                   type: string
+     *                   description: New token with decremented attempts. Must be used for the next try.
      */
     validateOtp = async (req, res, next) => {
         let timestamp = apiCallTime();
@@ -205,6 +224,11 @@ class SmsController extends BaseController {
                 sessionToken: result.sessionToken 
             }, "OTP Validated successfully");
         } catch (error) {
+            // If the error contains a new requestToken (from attempt decrement),
+            // include it in the response so the client can retry with the updated token.
+            if (error.errObj?.requestToken) {
+                error.requestToken = error.errObj.requestToken;
+            }
             this.handleError(error, req, res);
         }
     }
