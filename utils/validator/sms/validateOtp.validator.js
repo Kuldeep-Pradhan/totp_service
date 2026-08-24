@@ -1,7 +1,7 @@
 const { body } = require("express-validator")
 
 // ─── validateOTP validator ───
-// Optimized: only requestToken + otp needed (mobileNumber/params extracted from token)
+// Optimized: only requestToken + otp needed (all context extracted from token)
 const validateOtpValidation = () => {
     return [
         body("requestToken")
@@ -17,8 +17,8 @@ const validateOtpValidation = () => {
             .notEmpty()
             .withMessage("Please provide a valid otp")
             .bail({ level: "request" })
-            .matches(/^\d{6}$/)
-            .withMessage("OTP must be a 6 digit number")
+            .matches(/^\d{6,8}$/)
+            .withMessage("OTP must be a 6 to 8 digit number")
     ]
 }
 

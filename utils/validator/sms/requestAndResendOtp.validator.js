@@ -1,9 +1,12 @@
 const { body } = require("express-validator");
 
 // ─── requestOTP validator ───
-// Full body: mobileNumber, params, user_name, feature, operationPerformed, messageData, bankCode (optional)
 const requestOtpValidation = () => {
     return [
+        body("channel")
+            .optional()
+            .isIn(['SMS', 'EMAIL', 'DUAL'])
+            .withMessage("channel must be one of: SMS, EMAIL, DUAL"),
         body("user_name")
             .notEmpty()
             .withMessage("user_name is required")
@@ -32,9 +35,21 @@ const requestOtpValidation = () => {
             })
             .withMessage("Please enter a valid operation performed"),
         body().custom((value, { req }) => {
+            const channel = req.body.channel || 'SMS';
             const hasMobile = req.body.mobileNumber && req.body.mobileNumber.trim() !== '';
             const hasEmail = req.body.email && req.body.email.trim() !== '';
-            if (!hasMobile && !hasEmail) {
+
+            if (channel === 'SMS' && !hasMobile) {
+                throw new Error("mobileNumber is required for SMS channel");
+            }
+            if (channel === 'EMAIL' && !hasEmail) {
+                throw new Error("email is required for EMAIL channel");
+            }
+            if (channel === 'DUAL') {
+                if (!hasMobile) throw new Error("mobileNumber is required for DUAL channel");
+                if (!hasEmail) throw new Error("email is required for DUAL channel");
+            }
+            if (!channel && !hasMobile && !hasEmail) {
                 throw new Error("Either mobileNumber or email is required");
             }
             return true;
@@ -90,7 +105,6 @@ const requestOtpValidation = () => {
 };
 
 // ─── resendOTP validator ───
-// Optimized: only requestToken + messageData needed (everything else is in the token)
 const resendOtpValidation = () => {
     return [
         body("requestToken")

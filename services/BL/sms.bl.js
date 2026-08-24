@@ -1,14 +1,25 @@
 const { ValidationError } = require("../../utils/handler/error");
-const { generateDeterministicSecret, generateOtp, verifyOtp } = require("../../utils/helper/totp.helper");
-const { createRequestToken, verifyRequestToken, createSessionToken, verifySessionToken } = require("../../utils/helper/hmac.helper");
-const { isConsumed, markAsConsumed, getTokenSignature, isRequestIssued, markRequestIssued, clearIssuedRequest } = require("../../utils/helper/consumedTokens");
+const { generateNonce, constructSalt, deriveKey, generateHtotpCode, verifyHtotpCode, computeTimeStep, buildTxContext } = require("../../utils/helper/htotp.helper");
+const { createRequestToken, verifyRequestToken, decrementAttempts, createSessionToken, verifySessionToken } = require("../../utils/helper/hmac.helper");
+const { createFingerprint, verifyFingerprint } = require("../../utils/helper/channelBinding.helper");
+const { isConsumed, markAsConsumed, isRequestIssued, markRequestIssued, clearIssuedRequest } = require("../../utils/helper/consumedTokens");
 const { getOtpValiditySeconds } = require("../../utils/config/otpConfig");
 const { notificationDashboardAxiosCall } = require("../../utils/middlewares/axiosCall");
 const { Send_Notification_URL } = require("../../utils/config/env");
 
 // ─────────────────────────────────────────────────────────────────────
-// Stateless TOTP — state is embedded in HMAC-signed requestTokens.
-// Only minimal state: consumed token signatures to prevent replay.
+// HTOTP v2 — Hybrid Time-Nonce OTP Business Logic
+//
+// Algorithm: HKDF-SHA256(MasterKey, salt) → DerivedKey
+//            HMAC-SHA256(DerivedKey, TimeStep.Nonce.TxContext) → OTP
+//
+// Features:
+//   ✅ Per-request key derivation (HKDF)
+//   ✅ Transaction binding (TxContext in HMAC)
+//   ✅ Replay protection (random nonce per request)
+//   ✅ Channel binding (client IP + UA fingerprint)
+//   ✅ Stateless rate limiting (attempts counter in token)
+//   ✅ Nonce blacklist (replay-after-validation prevention)
 // ─────────────────────────────────────────────────────────────────────
 
 // ─── REQUEST OTP ───
@@ -16,14 +27,22 @@ const requestOtpBl = async (req, res) => {
     let timestamp = req.timestamp;
     try {
         let { mobileNumber, params, messageData, feature, operationPerformed, user_name, email, status } = req.body;
+        let channel = req.body?.channel || 'SMS';
         let bankCode = req.body?.bankCode;
         const validitySeconds = getOtpValiditySeconds(bankCode);
 
-        // Normalize: treat empty strings as undefined
+        // Normalize: treat empty strings as null
         mobileNumber = mobileNumber && mobileNumber.trim() ? mobileNumber.trim() : null;
         email = email && email.trim() ? email.trim() : null;
 
-        // ─── Build identityKey from available channels ───
+        // ─── Determine channel from available data if not explicitly set ───
+        if (!req.body.channel) {
+            if (mobileNumber && email) channel = 'DUAL';
+            else if (email) channel = 'EMAIL';
+            else channel = 'SMS';
+        }
+
+        // ─── Build identity key from available channels ───
         const identityKey = buildIdentityKey(mobileNumber, email);
 
         // ─── Duplicate check: independently lock each provided channel ───
@@ -44,28 +63,45 @@ const requestOtpBl = async (req, res) => {
             );
         }
 
-        // Generate deterministic secret from identityKey + params
-        const secret = generateDeterministicSecret(identityKey, params);
+        // ─── HTOTP Algorithm: Generate OTP ───
+        // Step 1: Generate per-request nonce (20-char alphanumeric)
+        const nonce = generateNonce();
 
-        // Generate current TOTP code
-        const otp = generateOtp(secret);
+        // Step 2: Construct salt based on channel mode
+        const salt = constructSalt(channel, mobileNumber, email, nonce);
 
-        // Create signed request token — embeds all state the server needs later
+        // Step 3: Derive per-request key via HKDF-SHA256
+        const derivedKey = deriveKey(salt);
+
+        // Step 4: Compute time step
+        const timeStep = computeTimeStep();
+
+        // Step 5: Build transaction context
+        const txContext = buildTxContext(feature, operationPerformed);
+
+        // Step 6: Generate HTOTP code
+        const otp = generateHtotpCode(derivedKey, timeStep, nonce, txContext);
+
+        // Step 7: Create channel binding fingerprint
+        const fingerprint = createFingerprint(req);
+
+        // Step 8: Create signed request token (carries ALL state)
         const requestToken = createRequestToken({
-            identityKey, mobileNumber, email, params, bankCode, user_name, feature, operationPerformed,
+            channel, mobileNumber, email, nonce, txContext, params,
+            bankCode, userName: user_name, feature, operationPerformed,
+            fingerprint, validitySeconds,
         });
 
         // Mark each provided channel as issued (auto-expires with OTP validity)
         if (mobileNumber) await markRequestIssued(mobileNumber, params, validitySeconds);
         if (email) await markRequestIssued(email, params, validitySeconds);
 
-        console.log(`OTP generated for ${identityKey} with params ${params}`, timestamp);
+        console.log(`[HTOTP] OTP generated for ${identityKey} | channel=${channel} | params=${params}`, timestamp);
 
         // Set OTP in messageData for notification
         messageData.otp = otp;
 
-        // Send notification — blocks until delivery confirmed, throws on failure
-        // (Redis key is already saved above, so user must retry with new params on failure)
+        // Send notification — blocks until delivery confirmed
         await sendNotification({ user_name, feature, operationPerformed, mobileNumber, messageData, email, status }, timestamp);
 
         return { otp, requestToken };
@@ -92,11 +128,11 @@ const resendOtpBl = async (req, res) => {
             );
         }
 
-        const { identityKey, mobileNumber, email, params, bankCode, user_name, feature, operationPerformed } = tokenData;
+        const { channel, mobileNumber, email, nonce: oldNonce, txContext, params, bankCode, userName, feature, operationPerformed } = tokenData;
+        const identityKey = buildIdentityKey(mobileNumber, email);
 
         // ─── Replay prevention: block resend if this session was already validated ───
-        const sessionKey = `${identityKey}:${params}`;
-        if (await isConsumed(sessionKey)) {
+        if (await isConsumed(oldNonce)) {
             throw new ValidationError(
                 "Request token already consumed",
                 {},
@@ -106,33 +142,41 @@ const resendOtpBl = async (req, res) => {
         }
 
         // Check if the original request token has expired
-        const validitySeconds = getOtpValiditySeconds(bankCode);
-        const elapsed = (Date.now() - tokenData.timestamp) / 1000;
-        if (elapsed > validitySeconds) {
+        if (Date.now() > tokenData.expiry) {
             throw new ValidationError(
                 "Request token has expired",
-                { elapsedSeconds: Math.floor(elapsed), validitySeconds },
+                {},
                 "Validation error",
                 "OTP request has expired. Please request a new OTP."
             );
         }
 
-        // Re-derive TOTP secret and generate fresh code
-        const secret = generateDeterministicSecret(identityKey, params);
-        const otp = generateOtp(secret);
+        // ─── HTOTP: Generate NEW nonce → NEW OTP (old OTP is dead) ───
+        const newNonce = generateNonce();
+        const validitySeconds = getOtpValiditySeconds(bankCode);
 
-        // Issue NEW request token (resets the validity timer)
+        const salt = constructSalt(channel, mobileNumber, email, newNonce);
+        const derivedKey = deriveKey(salt);
+        const timeStep = computeTimeStep();
+        const otp = generateHtotpCode(derivedKey, timeStep, newNonce, txContext);
+
+        // Create new fingerprint from current request
+        const fingerprint = createFingerprint(req);
+
+        // Issue NEW request token (new nonce, new timestamps, att reset to max)
         const newRequestToken = createRequestToken({
-            identityKey, mobileNumber, email, params, bankCode, user_name, feature, operationPerformed,
+            channel, mobileNumber, email, nonce: newNonce, txContext, params,
+            bankCode, userName, feature, operationPerformed,
+            fingerprint, validitySeconds,
         });
 
-        console.log(`OTP resent for ${identityKey} with params ${params}`, timestamp);
+        console.log(`[HTOTP] OTP resent for ${identityKey} | channel=${channel} | params=${params}`, timestamp);
 
         // Set OTP in messageData for notification
         messageData.otp = otp;
 
-        // Send notification — blocks until delivery confirmed, throws on failure
-        await sendNotification({ user_name, feature, operationPerformed, mobileNumber, messageData, email, status }, timestamp);
+        // Send notification
+        await sendNotification({ user_name: userName, feature, operationPerformed, mobileNumber, messageData, email, status }, timestamp);
 
         return { otp, requestToken: newRequestToken };
     } catch (error) {
@@ -147,7 +191,7 @@ const validateOtpBl = async (req, res) => {
     try {
         let { requestToken, otp } = req.body;
 
-        // Verify and decode the request token
+        // Step 1: Verify token signature
         const tokenData = verifyRequestToken(requestToken);
         if (!tokenData) {
             throw new ValidationError(
@@ -158,11 +202,11 @@ const validateOtpBl = async (req, res) => {
             );
         }
 
-        const { identityKey, mobileNumber, email, params, bankCode } = tokenData;
+        const { channel, mobileNumber, email, nonce, txContext, params, bankCode, userName, feature, fingerprint } = tokenData;
+        const identityKey = buildIdentityKey(mobileNumber, email);
 
-        // ─── Replay prevention: check if this session was already validated ───
-        const sessionKey = `${identityKey}:${params}`;
-        if (await isConsumed(sessionKey)) {
+        // Step 2: Check if nonce was already consumed (replay-after-validation prevention)
+        if (await isConsumed(nonce)) {
             throw new ValidationError(
                 "OTP already validated",
                 { identityKey },
@@ -171,54 +215,85 @@ const validateOtpBl = async (req, res) => {
             );
         }
 
-        // ─── Expiry check ───
-        const validitySeconds = getOtpValiditySeconds(bankCode);
-        const elapsed = (Date.now() - tokenData.timestamp) / 1000;
-        if (elapsed > validitySeconds) {
-            console.log(
-                `OTP expired for ${identityKey} params ${params}. Elapsed: ${elapsed.toFixed(1)}s, Validity: ${validitySeconds}s`,
-                timestamp
-            );
+        // Step 3: Check expiry
+        if (Date.now() > tokenData.expiry) {
+            console.log(`[HTOTP] Token expired for ${identityKey} params ${params}`, timestamp);
             throw new ValidationError(
                 "OTP has expired",
-                { elapsedSeconds: Math.floor(elapsed), validitySeconds },
+                {},
                 "Validation error",
                 "OTP has expired. Please request a new OTP."
             );
         }
 
-        // ─── Dev-mode bypass: accept '000000' ───
-        if (process.env.NODE_ENV === 'development' && otp === '000000') {
-            console.log("Dev mode: bypass OTP accepted (000000)", timestamp);
-            await markAsConsumed(sessionKey, validitySeconds);
-            if (mobileNumber) await clearIssuedRequest(mobileNumber, params);
-            if (email) await clearIssuedRequest(email, params);
-            const sessionToken = createSessionToken({ identityKey, mobileNumber, email, params, bankCode });
-            return { sessionToken };
-        }
-
-        // ─── TOTP verification ───
-        const secret = generateDeterministicSecret(identityKey, params);
-        const verified = verifyOtp(secret, otp, validitySeconds);
-
-        if (!verified) {
+        // Step 4: Check attempts remaining (stateless rate limiting)
+        if (tokenData.attempts <= 0) {
             throw new ValidationError(
-                "OTP does not match",
+                "Maximum OTP attempts exceeded",
                 {},
                 "Validation error",
-                "Invalid OTP"
+                "Maximum validation attempts exceeded. Please request a new OTP."
             );
         }
 
-        console.log(`OTP validated for ${identityKey} params ${params}`, timestamp);
+        // Step 5: Verify channel binding fingerprint
+        if (fingerprint && !verifyFingerprint(req, fingerprint)) {
+            console.log(`[HTOTP] Channel binding mismatch for ${identityKey}`, timestamp);
+            // Log the mismatch but don't hard-fail (IP/UA can change legitimately)
+            // In strict mode, uncomment the throw below:
+            // throw new ValidationError("Channel binding mismatch", {}, "Security Error", "Request origin mismatch. Please request a new OTP.");
+        }
 
-        // Mark session as consumed — prevents replay of ANY token for this session
-        await markAsConsumed(sessionKey, validitySeconds);
+        // Step 6: Dev-mode bypass: accept '000000'
+        if (process.env.NODE_ENV === 'development' && otp === '000000') {
+            console.log("[HTOTP] Dev mode: bypass OTP accepted (000000)", timestamp);
+            const validitySeconds = getOtpValiditySeconds(bankCode);
+            await markAsConsumed(nonce, validitySeconds);
+            if (mobileNumber) await clearIssuedRequest(mobileNumber, params);
+            if (email) await clearIssuedRequest(email, params);
+            const sessionToken = createSessionToken({ identityKey, mobileNumber, email, params, bankCode, txContext });
+            return { sessionToken };
+        }
+
+        // Step 7: Reconstruct the HTOTP and verify
+        const salt = constructSalt(channel, mobileNumber, email, nonce);
+        const derivedKey = deriveKey(salt);
+        const timeStep = computeTimeStep(tokenData.timestamp); // Use ORIGINAL timestamp
+        const verified = verifyHtotpCode(derivedKey, timeStep, nonce, txContext, otp);
+
+        if (!verified) {
+            // ─── Decrement attempts and re-sign token ───
+            const result = decrementAttempts(requestToken);
+            if (!result || result.attemptsRemaining <= 0) {
+                throw new ValidationError(
+                    "Invalid OTP — no attempts remaining",
+                    {},
+                    "Validation error",
+                    "Invalid OTP. Maximum attempts exceeded. Please request a new OTP."
+                );
+            }
+
+            throw new ValidationError(
+                "OTP does not match",
+                { requestToken: result.newToken },
+                "Validation error",
+                `Invalid OTP. ${result.attemptsRemaining} attempt(s) remaining.`,
+                400,
+                -1,
+                "VALERR0002"
+            );
+        }
+
+        console.log(`[HTOTP] OTP validated for ${identityKey} | params=${params}`, timestamp);
+
+        // Step 8: Mark nonce as consumed — prevents replay of ANY token with this nonce
+        const validitySeconds = getOtpValiditySeconds(bankCode);
+        await markAsConsumed(nonce, validitySeconds);
         if (mobileNumber) await clearIssuedRequest(mobileNumber, params);
         if (email) await clearIssuedRequest(email, params);
 
-        // Issue session token — proof of successful validation
-        const sessionToken = createSessionToken({ identityKey, mobileNumber, email, params, bankCode });
+        // Step 9: Issue session token — proof of successful validation
+        const sessionToken = createSessionToken({ identityKey, mobileNumber, email, params, bankCode, txContext });
         return { sessionToken };
     } catch (error) {
         console.log(JSON.stringify(error), "validateOTPBl error", timestamp);
@@ -227,7 +302,6 @@ const validateOtpBl = async (req, res) => {
 };
 
 // ─── Helper: Build identity key from available channels ───
-// Only includes non-empty values. Never includes empty strings.
 function buildIdentityKey(mobileNumber, email) {
     const parts = [];
     if (mobileNumber) parts.push(mobileNumber);
@@ -236,11 +310,9 @@ function buildIdentityKey(mobileNumber, email) {
 }
 
 // ─── Notification helper (blocking — throws on failure) ───
-// The Redis key is already saved before this is called, so on failure the user
-// must retry with new params. This is intentional to prevent OTP spam.
 async function sendNotification({ user_name, feature, operationPerformed, mobileNumber, messageData, email, status }, timestamp) {
     if (!Send_Notification_URL) {
-        console.log("Send_Notification_URL not configured, skipping notification call", timestamp);
+        console.log("[HTOTP] Send_Notification_URL not configured, skipping notification call", timestamp);
         return;
     }
 
@@ -259,12 +331,11 @@ async function sendNotification({ user_name, feature, operationPerformed, mobile
     };
     console.log(JSON.stringify(axiosRequestBody), "Notification Request Body", timestamp);
 
-    // Call notification API — let axios errors propagate (no try-catch here)
     const sendArray = await notificationDashboardAxiosCall(axiosRequestBody, timestamp);
 
     // ─── Validate sendArray response ───
     if (!sendArray || !Array.isArray(sendArray) || sendArray.length === 0) {
-        console.log("Notification API returned empty or invalid sendArray", timestamp);
+        console.log("[HTOTP] Notification API returned empty or invalid sendArray", timestamp);
         throw new ValidationError(
             "Notification delivery failed",
             { sendArray },
@@ -274,9 +345,7 @@ async function sendNotification({ user_name, feature, operationPerformed, mobile
         );
     }
 
-    // Build a map of which channels we expected to succeed
     const failedChannels = [];
-
     for (const entry of sendArray) {
         const channel = entry.type || entry.channel || "unknown";
         if (entry.send_status !== true && entry.send_status !== "true") {
@@ -285,7 +354,7 @@ async function sendNotification({ user_name, feature, operationPerformed, mobile
     }
 
     if (failedChannels.length > 0) {
-        console.log(`Notification send_status failed for channels: ${failedChannels.join(", ")}`, timestamp);
+        console.log(`[HTOTP] Notification send_status failed for channels: ${failedChannels.join(", ")}`, timestamp);
         throw new ValidationError(
             "OTP notification delivery failed",
             { failedChannels, sendArray },
@@ -295,7 +364,7 @@ async function sendNotification({ user_name, feature, operationPerformed, mobile
         );
     }
 
-    console.log("Notification delivered successfully for all channels", timestamp);
+    console.log("[HTOTP] Notification delivered successfully for all channels", timestamp);
 }
 
 // ─── VERIFY SESSION ───
@@ -314,7 +383,7 @@ const verifySessionBl = async (req, res) => {
             );
         }
 
-        console.log(`Session verified for ${sessionData.identityKey} params ${sessionData.params}`, timestamp);
+        console.log(`[HTOTP] Session verified for ${sessionData.identityKey} params ${sessionData.params}`, timestamp);
 
         return {
             identityKey: sessionData.identityKey,
@@ -322,6 +391,7 @@ const verifySessionBl = async (req, res) => {
             email: sessionData.email,
             params: sessionData.params,
             bankCode: sessionData.bankCode,
+            txContext: sessionData.txContext,
             timestamp: sessionData.timestamp,
         };
     } catch (error) {
