@@ -12,6 +12,7 @@ require('dotenv').config({ path: `./environment/.env.${activeEnv}` });
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+app.set("trust proxy", 1); // Trust first proxy for rate limiting (X-Forwarded-For)
 app.use(helmet({
     contentSecurityPolicy: false
 }));
@@ -23,7 +24,8 @@ app.use("/docs", express.static(path.join(__dirname, "totp-api-docs")));
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // Routes
-app.use("/NSDLMA", require("./routes"));
+const otpRoutes = require("./routes");
+app.use("/api/v1/otp", otpRoutes);     // Modern standardized prefix
 
 app.use((req, res, next) => {
     res.status(400).send("Invalid API request");

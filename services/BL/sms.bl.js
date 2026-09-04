@@ -3,10 +3,8 @@ const { generateNonce, constructSalt, deriveKey, generateHtotpCode, verifyHtotpC
 const { createRequestToken, verifyRequestToken, decrementAttempts, createSessionToken, verifySessionToken } = require("../../utils/helper/hmac.helper");
 const { createFingerprint, verifyFingerprint } = require("../../utils/helper/channelBinding.helper");
 const { isConsumed, markAsConsumed, isRequestIssued, markRequestIssued, clearIssuedRequest } = require("../../utils/helper/consumedTokens");
-const { getOtpValiditySeconds } = require("../../utils/config/otpConfig");
-const { notificationDashboardAxiosCall } = require("../../utils/middlewares/axiosCall");
-const { Send_Notification_URL } = require("../../utils/config/env");
-
+const { OTP_VALIDITY_SECONDS } = require("../../utils/config/env");
+const { send: sendNotification } = require("../../utils/notifications/NotificationEngine");
 // ─────────────────────────────────────────────────────────────────────
 // HTOTP v2 — Hybrid Time-Nonce OTP Business Logic
 //
@@ -29,7 +27,7 @@ const requestOtpBl = async (req, res) => {
         let { mobileNumber, params, messageData, feature, operationPerformed, user_name, email, status } = req.body;
         let channel = req.body?.channel || 'SMS';
         let bankCode = req.body?.bankCode;
-        const validitySeconds = getOtpValiditySeconds(bankCode);
+        const validitySeconds = OTP_VALIDITY_SECONDS;
 
         // Normalize: treat empty strings as null
         mobileNumber = mobileNumber && mobileNumber.trim() ? mobileNumber.trim() : null;
@@ -98,13 +96,27 @@ const requestOtpBl = async (req, res) => {
 
         console.log(`[HTOTP] OTP generated for ${identityKey} | channel=${channel} | params=${params}`, timestamp);
 
-        // Set OTP in messageData for notification
-        messageData.otp = otp;
-
         // Send notification — blocks until delivery confirmed
-        await sendNotification({ user_name, feature, operationPerformed, mobileNumber, messageData, email, status }, timestamp);
+        const notifyResult = await sendNotification({ 
+            channel, 
+            mobileNumber, 
+            email, 
+            otp, 
+            purpose: feature || operationPerformed,
+            userName: user_name 
+        });
 
-        return { otp, requestToken };
+        if (notifyResult.successCount === 0) {
+            throw new ValidationError(
+                "OTP notification delivery failed",
+                notifyResult.results,
+                "Notification Error",
+                "Failed to deliver OTP. Please try again.",
+                500
+            );
+        }
+
+        return { otp, requestToken, smsDisclaimer: notifyResult.smsDisclaimer };
     } catch (error) {
         console.log(JSON.stringify(error), "requestOTPBl error", timestamp);
         throw error;
@@ -153,7 +165,7 @@ const resendOtpBl = async (req, res) => {
 
         // ─── HTOTP: Generate NEW nonce → NEW OTP (old OTP is dead) ───
         const newNonce = generateNonce();
-        const validitySeconds = getOtpValiditySeconds(bankCode);
+        const validitySeconds = OTP_VALIDITY_SECONDS;
 
         const salt = constructSalt(channel, mobileNumber, email, newNonce);
         const derivedKey = deriveKey(salt);
@@ -172,13 +184,27 @@ const resendOtpBl = async (req, res) => {
 
         console.log(`[HTOTP] OTP resent for ${identityKey} | channel=${channel} | params=${params}`, timestamp);
 
-        // Set OTP in messageData for notification
-        messageData.otp = otp;
-
         // Send notification
-        await sendNotification({ user_name: userName, feature, operationPerformed, mobileNumber, messageData, email, status }, timestamp);
+        const notifyResult = await sendNotification({ 
+            channel, 
+            mobileNumber, 
+            email, 
+            otp, 
+            purpose: feature || operationPerformed,
+            userName 
+        });
 
-        return { otp, requestToken: newRequestToken };
+        if (notifyResult.successCount === 0) {
+            throw new ValidationError(
+                "OTP notification delivery failed",
+                notifyResult.results,
+                "Notification Error",
+                "Failed to deliver OTP. Please try again.",
+                500
+            );
+        }
+
+        return { otp, requestToken: newRequestToken, smsDisclaimer: notifyResult.smsDisclaimer };
     } catch (error) {
         console.log(JSON.stringify(error), "resendOTPBl error", timestamp);
         throw error;
@@ -247,7 +273,7 @@ const validateOtpBl = async (req, res) => {
         // Step 6: Dev-mode bypass: accept '000000'
         if (process.env.NODE_ENV === 'development' && otp === '000000') {
             console.log("[HTOTP] Dev mode: bypass OTP accepted (000000)", timestamp);
-            const validitySeconds = getOtpValiditySeconds(bankCode);
+            const validitySeconds = OTP_VALIDITY_SECONDS;
             await markAsConsumed(nonce, validitySeconds);
             if (mobileNumber) await clearIssuedRequest(mobileNumber, params);
             if (email) await clearIssuedRequest(email, params);
@@ -287,7 +313,7 @@ const validateOtpBl = async (req, res) => {
         console.log(`[HTOTP] OTP validated for ${identityKey} | params=${params}`, timestamp);
 
         // Step 8: Mark nonce as consumed — prevents replay of ANY token with this nonce
-        const validitySeconds = getOtpValiditySeconds(bankCode);
+        const validitySeconds = OTP_VALIDITY_SECONDS;
         await markAsConsumed(nonce, validitySeconds);
         if (mobileNumber) await clearIssuedRequest(mobileNumber, params);
         if (email) await clearIssuedRequest(email, params);
@@ -309,63 +335,6 @@ function buildIdentityKey(mobileNumber, email) {
     return parts.join(':');
 }
 
-// ─── Notification helper (blocking — throws on failure) ───
-async function sendNotification({ user_name, feature, operationPerformed, mobileNumber, messageData, email, status }, timestamp) {
-    if (!Send_Notification_URL) {
-        console.log("[HTOTP] Send_Notification_URL not configured, skipping notification call", timestamp);
-        return;
-    }
-
-    const axiosRequestBody = {
-        user_name,
-        feature: feature.toUpperCase(),
-        operation_performed: operationPerformed.toUpperCase(),
-        status: status || "SUCCESS",
-        status_code: "0",
-        notification_data: {
-            mobile_number: mobileNumber || "",
-            email: email || "",
-            WhatsappMobile: "",
-            params: messageData,
-        },
-    };
-    console.log(JSON.stringify(axiosRequestBody), "Notification Request Body", timestamp);
-
-    const sendArray = await notificationDashboardAxiosCall(axiosRequestBody, timestamp);
-
-    // ─── Validate sendArray response ───
-    if (!sendArray || !Array.isArray(sendArray) || sendArray.length === 0) {
-        console.log("[HTOTP] Notification API returned empty or invalid sendArray", timestamp);
-        throw new ValidationError(
-            "Notification delivery failed",
-            { sendArray },
-            "Notification Error",
-            "Failed to deliver OTP notification. Please retry with new params.",
-            500
-        );
-    }
-
-    const failedChannels = [];
-    for (const entry of sendArray) {
-        const channel = entry.type || entry.channel || "unknown";
-        if (entry.send_status !== true && entry.send_status !== "true") {
-            failedChannels.push(channel);
-        }
-    }
-
-    if (failedChannels.length > 0) {
-        console.log(`[HTOTP] Notification send_status failed for channels: ${failedChannels.join(", ")}`, timestamp);
-        throw new ValidationError(
-            "OTP notification delivery failed",
-            { failedChannels, sendArray },
-            "Notification Error",
-            `Failed to deliver OTP via: ${failedChannels.join(", ")}. Please retry with new params.`,
-            500
-        );
-    }
-
-    console.log("[HTOTP] Notification delivered successfully for all channels", timestamp);
-}
 
 // ─── VERIFY SESSION ───
 const verifySessionBl = async (req, res) => {

@@ -8,6 +8,14 @@ const client = new SecretManagerServiceClient();
  * @returns {Promise<Object|null>} Parsed JSON object of redis details or null on failure
  */
 async function getRedisSecret() {
+    if (process.env.REDIS_LOCAL === 'true') {
+        console.log("[Secrets] REDIS_LOCAL=true, skipping Secret Manager and using local Redis");
+        return {
+            host: "127.0.0.1",
+            port: 6379,
+        };
+    }
+
     if (!REDIS_SECRET_NAME) {
         console.warn("[Secrets] REDIS_SECRET_NAME is not set in environment.");
         return null;

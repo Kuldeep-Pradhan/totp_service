@@ -5,7 +5,7 @@ const { apiCallTime } = require("../utils/helper/timestamps");
 class SmsController extends BaseController {
     /**
      * @swagger
-     * /NSDLMA/otp-service/request-otp:
+     * /api/v1/otp/otp-service/request-otp:
      *   post:
      *     summary: Request a new HTOTP
      *     description: |
@@ -83,10 +83,16 @@ class SmsController extends BaseController {
             let result = await requestOtpBl(req, res);
             console.log("requestOTP API final response", timestamp);
             
-            this.handleSuccess(res, { 
+            const responsePayload = {
                 otp: result.otp, 
-                requestToken: result.requestToken 
-            }, "OTP sent successfully.");
+                requestToken: result.requestToken
+            };
+
+            if (result.smsDisclaimer) {
+                responsePayload.smsDisclaimer = result.smsDisclaimer;
+            }
+
+            this.handleSuccess(res, responsePayload, "OTP sent successfully.");
         } catch (error) {
             this.handleError(error, req, res);
         }
@@ -94,7 +100,7 @@ class SmsController extends BaseController {
 
     /**
      * @swagger
-     * /NSDLMA/otp-service/resend-otp:
+     * /api/v1/otp/otp-service/resend-otp:
      *   post:
      *     summary: Resend OTP
      *     description: |
@@ -140,10 +146,16 @@ class SmsController extends BaseController {
             let result = await resendOtpBl(req, res);
             console.log("resendOTP API final response", timestamp);
             
-            this.handleSuccess(res, { 
+            const responsePayload = {
                 otp: result.otp, 
-                requestToken: result.requestToken 
-            }, "OTP resent successfully.");
+                requestToken: result.requestToken
+            };
+
+            if (result.smsDisclaimer) {
+                responsePayload.smsDisclaimer = result.smsDisclaimer;
+            }
+
+            this.handleSuccess(res, responsePayload, "OTP resent successfully.");
         } catch (error) {
             this.handleError(error, req, res);
         }
@@ -151,7 +163,7 @@ class SmsController extends BaseController {
 
     /**
      * @swagger
-     * /NSDLMA/otp-service/validate-otp:
+     * /api/v1/otp/otp-service/validate-otp:
      *   post:
      *     summary: Validate an OTP
      *     description: |
@@ -235,7 +247,7 @@ class SmsController extends BaseController {
 
     /**
      * @swagger
-     * /NSDLMA/otp-service/verify-session:
+     * /api/v1/otp/otp-service/verify-session:
      *   post:
      *     summary: Verify a Session Token
      *     description: |
