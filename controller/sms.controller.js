@@ -75,11 +75,12 @@ class SmsController extends BaseController {
      *         description: Validation error
      */
     requestOtp = async (req, res, next) => {
-        let timestamp = apiCallTime();
-        req.timestamp = timestamp;
-
-        console.log(JSON.stringify(req.body), "requestOTP API request Body", timestamp);
         try {
+            let timestamp = apiCallTime();
+            req.timestamp = timestamp;
+
+            console.log(JSON.stringify(req.body), "requestOTP API request Body", timestamp);
+        
             let result = await requestOtpBl(req, res);
             console.log("requestOTP API final response", timestamp);
             
