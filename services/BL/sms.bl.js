@@ -2,7 +2,7 @@ const { ValidationError } = require("../../utils/handler/error");
 const { generateNonce, constructSalt, deriveKey, generateHtotpCode, verifyHtotpCode, computeTimeStep, buildTxContext } = require("../../utils/helper/htotp.helper");
 const { createRequestToken, verifyRequestToken, createSessionToken, verifySessionToken } = require("../../utils/helper/hmac.helper");
 const { createFingerprint, verifyFingerprint } = require("../../utils/helper/channelBinding.helper");
-const { isConsumed, markAsConsumed, acquireRequestLock, clearIssuedRequest, incrementFailedAttempts, getFailedAttempts } = require("../../utils/helper/consumedTokens");
+const { isConsumed, markAsConsumed, acquireRequestLock, clearIssuedRequest, incrementFailedAttempts, getFailedAttempts, checkIdentityRateLimit } = require("../../utils/helper/consumedTokens");
 const { OTP_VALIDITY_SECONDS } = require("../../utils/config/env");
 const { send: sendNotification } = require("../../utils/notifications/NotificationEngine");
 // ─────────────────────────────────────────────────────────────────────
@@ -47,6 +47,20 @@ const requestOtpBl = async (req, res) => {
         const requestedChannels = [];
         if (mobileNumber) requestedChannels.push({ id: mobileNumber, type: 'mobile number' });
         if (email) requestedChannels.push({ id: email, type: 'email' });
+        
+        // ─── Rate Limit check: Prevent SMS Bombing (V-05) ───
+        for (const channel of requestedChannels) {
+            const isAllowed = await checkIdentityRateLimit(channel.id);
+            if (!isAllowed) {
+                throw new ValidationError(
+                    `Rate limit exceeded for this ${channel.type}`,
+                    {},
+                    "Too Many Requests",
+                    `Too many OTP requests for this ${channel.type}. Please wait 5 minutes before requesting a new OTP.`,
+                    429
+                );
+            }
+        }
 
         const acquiredLocks = [];
         for (const channel of requestedChannels) {

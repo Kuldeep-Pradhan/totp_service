@@ -140,8 +140,32 @@ async function getFailedAttempts(nonce) {
 }
 
 
+// ─── Identity Rate Limiting (Prevent SMS Bombing) ───
+const identityRateLimitCache = new NodeCache({ stdTTL: 0, checkperiod: 30, deleteOnExpire: true });
+
+async function checkIdentityRateLimit(identifier, maxRequests = 3, windowSeconds = 300) {
+    const key = `ratelimit:${identifier}`;
+    if (getIsRedisConnected()) {
+        try {
+            const current = await getRedisClient().incr(key);
+            if (current === 1) {
+                await getRedisClient().expire(key, windowSeconds);
+            }
+            return current <= maxRequests;
+        } catch (error) {
+            console.error(`[Redis] Error checking rate limit: ${error.message}`);
+        }
+    }
+    // Fallback to node-cache
+    let current = identityRateLimitCache.get(key) || 0;
+    current += 1;
+    identityRateLimitCache.set(key, current, windowSeconds);
+    return current <= maxRequests;
+}
+
 module.exports = {
     isConsumed, markAsConsumed, getTokenSignature,
     acquireRequestLock, clearIssuedRequest,
-    incrementFailedAttempts, getFailedAttempts
+    incrementFailedAttempts, getFailedAttempts,
+    checkIdentityRateLimit
 };
