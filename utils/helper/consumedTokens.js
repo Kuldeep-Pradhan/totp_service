@@ -67,48 +67,26 @@ function getTokenSignature(token) {
 
 // ─── Issued Requests (duplicate request prevention) ───
 
-async function isRequestIssued(mobileNumber, params) {
+async function acquireRequestLock(mobileNumber, params, ttlSeconds) {
     const localKey = `${mobileNumber}:${params}`;
     const redisKey = `issued:${localKey}`;
 
-    // 1. Check local fallback cache first (handles the split-brain edge case locally)
-    if (issuedRequests.has(localKey)) {
-        // Opportunistic Sync: If Redis reconnected, push state to Redis and clear local
-        if (getIsRedisConnected()) {
-            const ttlMs = issuedRequests.getTtl(localKey);
-            if (ttlMs) {
-                const ttlSeconds = Math.max(1, Math.floor((ttlMs - Date.now()) / 1000));
-                await getRedisClient().set(redisKey, 'true', 'EX', ttlSeconds).catch(() => {});
-            }
-            issuedRequests.del(localKey);
-        }
-        return true;
-    }
-
-    // 2. Then check Redis
     if (getIsRedisConnected()) {
         try {
-            const result = await getRedisClient().get(redisKey);
-            return result !== null;
+            // SET key value NX EX ttl (atomic operation)
+            const result = await getRedisClient().set(redisKey, 'true', 'EX', ttlSeconds, 'NX');
+            return result === 'OK'; // true if lock was acquired, false if it already existed
         } catch (error) {
-            console.error(`[Redis] Error getting issued request: ${error.message}`);
+            console.error(`[Redis] Error acquiring lock: ${error.message}`);
         }
     }
-    return false;
-}
 
-async function markRequestIssued(mobileNumber, params, ttlSeconds) {
-    const key = `issued:${mobileNumber}:${params}`;
-    if (getIsRedisConnected()) {
-        try {
-            await getRedisClient().set(key, 'true', 'EX', ttlSeconds);
-            return;
-        } catch (error) {
-            console.error(`[Redis] Error setting issued request: ${error.message}`);
-        }
-    }
     // Fallback to node-cache
-    issuedRequests.set(`${mobileNumber}:${params}`, true, ttlSeconds);
+    if (issuedRequests.has(localKey)) {
+        return false;
+    }
+    issuedRequests.set(localKey, true, ttlSeconds);
+    return true;
 }
 
 async function clearIssuedRequest(mobileNumber, params) {
@@ -164,6 +142,6 @@ async function getFailedAttempts(nonce) {
 
 module.exports = {
     isConsumed, markAsConsumed, getTokenSignature,
-    isRequestIssued, markRequestIssued, clearIssuedRequest,
+    acquireRequestLock, clearIssuedRequest,
     incrementFailedAttempts, getFailedAttempts
 };

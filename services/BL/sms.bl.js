@@ -2,7 +2,7 @@ const { ValidationError } = require("../../utils/handler/error");
 const { generateNonce, constructSalt, deriveKey, generateHtotpCode, verifyHtotpCode, computeTimeStep, buildTxContext } = require("../../utils/helper/htotp.helper");
 const { createRequestToken, verifyRequestToken, createSessionToken, verifySessionToken } = require("../../utils/helper/hmac.helper");
 const { createFingerprint, verifyFingerprint } = require("../../utils/helper/channelBinding.helper");
-const { isConsumed, markAsConsumed, isRequestIssued, markRequestIssued, clearIssuedRequest, incrementFailedAttempts, getFailedAttempts } = require("../../utils/helper/consumedTokens");
+const { isConsumed, markAsConsumed, acquireRequestLock, clearIssuedRequest, incrementFailedAttempts, getFailedAttempts } = require("../../utils/helper/consumedTokens");
 const { OTP_VALIDITY_SECONDS } = require("../../utils/config/env");
 const { send: sendNotification } = require("../../utils/notifications/NotificationEngine");
 // ─────────────────────────────────────────────────────────────────────
@@ -43,22 +43,27 @@ const requestOtpBl = async (req, res) => {
         // ─── Build identity key from available channels ───
         const identityKey = buildIdentityKey(mobileNumber, email);
 
-        // ─── Duplicate check: independently lock each provided channel ───
-        if (mobileNumber && await isRequestIssued(mobileNumber, params)) {
-            throw new ValidationError(
-                "OTP already requested for this mobileNumber + params",
-                {},
-                "Validation Error",
-                "OTP already sent for this mobile number with the same params. Use a unique params value or resend the existing OTP."
-            );
-        }
-        if (email && await isRequestIssued(email, params)) {
-            throw new ValidationError(
-                "OTP already requested for this email + params",
-                {},
-                "Validation Error",
-                "OTP already sent for this email with the same params. Use a unique params value or resend the existing OTP."
-            );
+        // ─── Duplicate check: independently lock each provided channel (atomic) ───
+        const requestedChannels = [];
+        if (mobileNumber) requestedChannels.push({ id: mobileNumber, type: 'mobile number' });
+        if (email) requestedChannels.push({ id: email, type: 'email' });
+
+        const acquiredLocks = [];
+        for (const channel of requestedChannels) {
+            const locked = await acquireRequestLock(channel.id, params, validitySeconds);
+            if (!locked) {
+                // Clean code: Rollback previously acquired locks to prevent partial state
+                if (acquiredLocks.length > 0) {
+                    await Promise.all(acquiredLocks.map(id => clearIssuedRequest(id, params)));
+                }
+                throw new ValidationError(
+                    `OTP already requested for this ${channel.type} + params`,
+                    {},
+                    "Validation Error",
+                    `OTP already sent for this ${channel.type} with the same params. Use a unique params value or resend the existing OTP.`
+                );
+            }
+            acquiredLocks.push(channel.id);
         }
 
         // ─── HTOTP Algorithm: Generate OTP ───
@@ -90,10 +95,6 @@ const requestOtpBl = async (req, res) => {
             fingerprint, validitySeconds,
         });
 
-        // Mark each provided channel as issued (auto-expires with OTP validity)
-        if (mobileNumber) await markRequestIssued(mobileNumber, params, validitySeconds);
-        if (email) await markRequestIssued(email, params, validitySeconds);
-
         console.log(`[HTOTP] OTP generated for ${identityKey} | channel=${channel} | params=${params}`, timestamp);
 
         // Send notification — blocks until delivery confirmed
@@ -107,6 +108,9 @@ const requestOtpBl = async (req, res) => {
         });
 
         if (notifyResult.successCount === 0) {
+            if (acquiredLocks.length > 0) {
+                await Promise.all(acquiredLocks.map(id => clearIssuedRequest(id, params)));
+            }
             throw new ValidationError(
                 "OTP notification delivery failed",
                 notifyResult.results,
