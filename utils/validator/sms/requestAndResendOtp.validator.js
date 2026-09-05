@@ -15,11 +15,13 @@ const requestOtpValidation = () => {
             const hasMobile = req.body.mobileNumber && req.body.mobileNumber.trim() !== '';
             const hasEmail = req.body.email && req.body.email.trim() !== '';
 
-            if (channel === 'SMS' && !hasMobile) {
-                throw new Error("mobileNumber is required for SMS channel");
+            if (channel === 'SMS') {
+                if (!hasMobile) throw new Error("mobileNumber is required for SMS channel");
+                if (hasEmail) throw new Error("email must not be provided for SMS channel");
             }
-            if (channel === 'EMAIL' && !hasEmail) {
-                throw new Error("email is required for EMAIL channel");
+            if (channel === 'EMAIL') {
+                if (!hasEmail) throw new Error("email is required for EMAIL channel");
+                if (hasMobile) throw new Error("mobileNumber must not be provided for EMAIL channel");
             }
             if (channel === 'DUAL') {
                 if (!hasMobile) throw new Error("mobileNumber is required for DUAL channel");
@@ -47,8 +49,8 @@ const requestOtpValidation = () => {
         body("messageData").optional().isObject(),
         body("email")
             .optional({ checkFalsy: true })
-            .isString()
-            .withMessage("Email must be a string"),
+            .isEmail()
+            .withMessage("Please provide a valid email address"),
         body("status").optional().isString(),
     ];
 };
@@ -70,8 +72,8 @@ const resendOtpValidation = () => {
             .withMessage("messageData should be an object"),
         body("email")
             .optional({ checkFalsy: true })
-            .isString()
-            .withMessage("Email must be a string"),
+            .isEmail()
+            .withMessage("Please provide a valid email address"),
         body("status")
             .optional()
             .isString()
