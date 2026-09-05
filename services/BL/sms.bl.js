@@ -171,6 +171,9 @@ const resendOtpBl = async (req, res) => {
         const newNonce = generateNonce();
         const validitySeconds = OTP_VALIDITY_SECONDS;
 
+        // Burn the old nonce so the previous OTP is instantly dead
+        await markAsConsumed(oldNonce, validitySeconds);
+
         const salt = constructSalt(channel, mobileNumber, email, newNonce);
         const derivedKey = deriveKey(salt);
         const timeStep = computeTimeStep();
