@@ -61,6 +61,17 @@ async function clearIssuedRequest(mobileNumber, params) {
     }
 }
 
+async function extendRequestLock(mobileNumber, params, ttlSeconds) {
+    ensureRedis();
+    const key = `issued:${mobileNumber}:${params}`;
+    try {
+        await getRedisClient().set(key, 'true', 'EX', ttlSeconds);
+    } catch (error) {
+        console.error(`[Redis] Error extending lock: ${error.message}`);
+        throw new Error("Redis is unavailable. Security mechanisms cannot operate securely.");
+    }
+}
+
 // ─── Failed Attempts (rate limiting per token) ───
 
 async function incrementFailedAttempts(nonce, ttlSeconds) {
@@ -90,17 +101,39 @@ async function getFailedAttempts(nonce) {
     }
 }
 
-// ─── Identity Rate Limiting (Prevent SMS Bombing) ───
+// ─── Identity Rate Limiting (Prevent SMS Bombing - Hybrid V-10) ───
 
-async function checkIdentityRateLimit(identifier, maxRequests = 3, windowSeconds = 300) {
+async function checkIdentityRateLimit(identifier, feature, featureMax = 3, globalMax = 10, windowSeconds = 300) {
     ensureRedis();
-    const key = `ratelimit:${identifier}`;
+    const featureName = feature || 'DEFAULT';
+    const globalKey = `ratelimit:global:${identifier}`;
+    const featureKey = `ratelimit:feature:${identifier}:${featureName}`;
+    
     try {
-        const current = await getRedisClient().incr(key);
-        if (current === 1) {
-            await getRedisClient().expire(key, windowSeconds);
+        const redisClient = getRedisClient();
+        
+        // Atomic increment of both counters
+        const pipeline = redisClient.multi();
+        pipeline.incr(globalKey);
+        pipeline.incr(featureKey);
+        const results = await pipeline.exec();
+        
+        const globalCurrent = results[0][1];
+        const featureCurrent = results[1][1];
+        
+        // Set TTL if newly created
+        if (globalCurrent === 1) await redisClient.expire(globalKey, windowSeconds);
+        if (featureCurrent === 1) await redisClient.expire(featureKey, windowSeconds);
+        
+        if (globalCurrent > globalMax) {
+            return { allowed: false, reason: 'global' };
         }
-        return current <= maxRequests;
+        
+        if (featureCurrent > featureMax) {
+            return { allowed: false, reason: 'feature' };
+        }
+        
+        return { allowed: true };
     } catch (error) {
         console.error(`[Redis] Error checking rate limit: ${error.message}`);
         throw new Error("Redis is unavailable. Security mechanisms cannot operate securely.");
@@ -109,7 +142,7 @@ async function checkIdentityRateLimit(identifier, maxRequests = 3, windowSeconds
 
 module.exports = {
     isConsumed, markAsConsumed, getTokenSignature,
-    acquireRequestLock, clearIssuedRequest,
+    acquireRequestLock, clearIssuedRequest, extendRequestLock,
     incrementFailedAttempts, getFailedAttempts,
     checkIdentityRateLimit
 };

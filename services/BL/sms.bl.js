@@ -2,7 +2,7 @@ const { ValidationError } = require("../../utils/handler/error");
 const { generateNonce, constructSalt, deriveKey, generateHtotpCode, verifyHtotpCode, computeTimeStep, buildTxContext } = require("../../utils/helper/htotp.helper");
 const { createRequestToken, verifyRequestToken, createSessionToken, verifySessionToken } = require("../../utils/helper/hmac.helper");
 const { createFingerprint, verifyFingerprint } = require("../../utils/helper/channelBinding.helper");
-const { isConsumed, markAsConsumed, acquireRequestLock, clearIssuedRequest, incrementFailedAttempts, getFailedAttempts, checkIdentityRateLimit } = require("../../utils/helper/consumedTokens");
+const { isConsumed, markAsConsumed, acquireRequestLock, clearIssuedRequest, extendRequestLock, incrementFailedAttempts, getFailedAttempts, checkIdentityRateLimit } = require("../../utils/helper/consumedTokens");
 const { OTP_VALIDITY_SECONDS } = require("../../utils/config/env");
 const { send: sendNotification } = require("../../utils/notifications/NotificationEngine");
 // ─────────────────────────────────────────────────────────────────────
@@ -48,10 +48,10 @@ const requestOtpBl = async (req, res) => {
         if (mobileNumber) requestedChannels.push({ id: mobileNumber, type: 'mobile number' });
         if (email) requestedChannels.push({ id: email, type: 'email' });
         
-        // ─── Rate Limit check: Prevent SMS Bombing (V-05) ───
+        // ─── Rate Limit check: Prevent SMS Bombing (V-05/V-10 Hybrid) ───
         for (const channel of requestedChannels) {
-            const isAllowed = await checkIdentityRateLimit(channel.id);
-            if (!isAllowed) {
+            const limitStatus = await checkIdentityRateLimit(channel.id, feature);
+            if (!limitStatus.allowed) {
                 throw new ValidationError(
                     `Rate limit exceeded for this ${channel.type}`,
                     {},
@@ -161,6 +161,25 @@ const resendOtpBl = async (req, res) => {
         const { channel, mobileNumber, email, nonce: oldNonce, txContext, params, bankCode, userName, feature, operationPerformed } = tokenData;
         const identityKey = buildIdentityKey(mobileNumber, email);
 
+        // ─── Rate Limit check: Prevent SMS Bombing via Resend (V-10) ───
+        const requestedChannels = [];
+        if (mobileNumber) requestedChannels.push({ id: mobileNumber, type: 'mobile number' });
+        if (email) requestedChannels.push({ id: email, type: 'email' });
+
+        for (const ch of requestedChannels) {
+            const limitStatus = await checkIdentityRateLimit(ch.id, feature);
+            if (!limitStatus.allowed) {
+                console.log(`[HTOTP] Rate limit exceeded (${limitStatus.reason}) on RESEND for ${ch.type} ${ch.id}`, timestamp);
+                throw new ValidationError(
+                    `Rate limit exceeded for this ${ch.type}`,
+                    {},
+                    "Too Many Requests",
+                    `Too many OTP requests for this ${ch.type}. Please wait 5 minutes before requesting a new OTP.`,
+                    429
+                );
+            }
+        }
+
         // ─── Replay prevention: block resend if this session was already validated ───
         if (await isConsumed(oldNonce)) {
             throw new ValidationError(
@@ -187,6 +206,10 @@ const resendOtpBl = async (req, res) => {
 
         // Burn the old nonce so the previous OTP is instantly dead
         await markAsConsumed(oldNonce, validitySeconds);
+
+        // ─── Extend Duplicate Request Lock (V-10 Edge Case Fix) ───
+        if (mobileNumber) await extendRequestLock(mobileNumber, params, validitySeconds);
+        if (email) await extendRequestLock(email, params, validitySeconds);
 
         const salt = constructSalt(channel, mobileNumber, email, newNonce);
         const derivedKey = deriveKey(salt);
@@ -292,9 +315,16 @@ const validateOtpBl = async (req, res) => {
         // Step 5: Verify channel binding fingerprint
         if (fingerprint && !verifyFingerprint(req, fingerprint)) {
             console.log(`[HTOTP] Channel binding mismatch for ${identityKey}`, timestamp);
-            // Log the mismatch but don't hard-fail (IP/UA can change legitimately)
-            // In strict mode, uncomment the throw below:
-            // throw new ValidationError("Channel binding mismatch", {}, "Security Error", "Request origin mismatch. Please request a new OTP.");
+            
+            // Increment failed attempts to prevent infinite fingerprint guessing
+            const attempts = await incrementFailedAttempts(nonce, OTP_VALIDITY_SECONDS);
+            if (attempts >= 3) {
+                await markAsConsumed(nonce, OTP_VALIDITY_SECONDS);
+                throw new ValidationError("Maximum attempts exceeded.", {}, "Security Error", "Maximum attempts exceeded. Please request a new OTP.");
+            }
+
+            // Hard-fail on mismatch
+            throw new ValidationError("Channel binding mismatch", {}, "Security Error", "Request origin mismatch. Please request a new OTP.");
         }
 
         // Step 6: Dev-mode bypass: accept '000000'
