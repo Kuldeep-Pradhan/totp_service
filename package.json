@@ -26,7 +26,6 @@
     "helmet": "^7.1.0",
     "ioredis": "^5.11.0",
     "moment-timezone": "^0.5.44",
-    "node-cache": "^5.1.2",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"
   },
