@@ -125,7 +125,45 @@ async function clearIssuedRequest(mobileNumber, params) {
     issuedRequests.del(`${mobileNumber}:${params}`);
 }
 
+// ─── Failed Attempts (rate limiting per token) ───
+const failedAttemptsCache = new NodeCache({ stdTTL: 0, checkperiod: 30, deleteOnExpire: true });
+
+async function incrementFailedAttempts(nonce, ttlSeconds) {
+    const key = `attempts:${nonce}`;
+    if (getIsRedisConnected()) {
+        try {
+            const current = await getRedisClient().incr(key);
+            if (current === 1) {
+                await getRedisClient().expire(key, ttlSeconds);
+            }
+            return current;
+        } catch (error) {
+            console.error(`[Redis] Error incrementing attempts: ${error.message}`);
+        }
+    }
+    // Fallback to node-cache
+    let current = failedAttemptsCache.get(key) || 0;
+    current += 1;
+    failedAttemptsCache.set(key, current, ttlSeconds);
+    return current;
+}
+
+async function getFailedAttempts(nonce) {
+    const key = `attempts:${nonce}`;
+    if (getIsRedisConnected()) {
+        try {
+            const current = await getRedisClient().get(key);
+            return current ? parseInt(current, 10) : 0;
+        } catch (error) {
+             console.error(`[Redis] Error getting attempts: ${error.message}`);
+        }
+    }
+    return failedAttemptsCache.get(key) || 0;
+}
+
+
 module.exports = {
     isConsumed, markAsConsumed, getTokenSignature,
     isRequestIssued, markRequestIssued, clearIssuedRequest,
+    incrementFailedAttempts, getFailedAttempts
 };

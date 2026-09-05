@@ -108,45 +108,6 @@ function verifyRequestToken(token) {
     }
 }
 
-/**
- * Decrements the attempts counter in a requestToken and re-signs it.
- * Used when OTP validation fails — returns a new token with att-1.
- * @param {string} token - The current requestToken
- * @returns {Object|null} { newToken, attemptsRemaining } or null if invalid
- */
-function decrementAttempts(token) {
-    const data = verifyRequestToken(token);
-    if (!data) return null;
-    if (data.attempts <= 0) return null;
-
-    const newAttempts = data.attempts - 1;
-
-    // Rebuild the payload with decremented attempts (keep original timestamps)
-    const payload = JSON.stringify({
-        v: data.version,
-        ch: data.channel,
-        mn: data.mobileNumber || '',
-        em: data.email || '',
-        n: data.nonce,
-        tx: data.txContext,
-        p: data.params,
-        bc: data.bankCode || '',
-        un: data.userName,
-        f: data.feature,
-        op: data.operationPerformed,
-        fp: data.fingerprint || '',
-        ts: data.timestamp,
-        exp: data.expiry,
-        att: newAttempts,
-    });
-    const b64 = Buffer.from(payload).toString('base64url');
-    const sig = crypto.createHmac('sha256', HTOTP_TOKEN_SIGNING_KEY).update(b64).digest('hex');
-
-    return {
-        newToken: `${b64}.${sig}`,
-        attemptsRemaining: newAttempts,
-    };
-}
 
 // ─── SESSION TOKEN ───
 // Issued after successful OTP validation — proof of verification.
@@ -217,4 +178,4 @@ function verifySessionToken(token, maxAgeMs = 5 * 60 * 1000) {
     }
 }
 
-module.exports = { createRequestToken, verifyRequestToken, decrementAttempts, createSessionToken, verifySessionToken };
+module.exports = { createRequestToken, verifyRequestToken, createSessionToken, verifySessionToken };

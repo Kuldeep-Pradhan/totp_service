@@ -1,8 +1,8 @@
 const { ValidationError } = require("../../utils/handler/error");
 const { generateNonce, constructSalt, deriveKey, generateHtotpCode, verifyHtotpCode, computeTimeStep, buildTxContext } = require("../../utils/helper/htotp.helper");
-const { createRequestToken, verifyRequestToken, decrementAttempts, createSessionToken, verifySessionToken } = require("../../utils/helper/hmac.helper");
+const { createRequestToken, verifyRequestToken, createSessionToken, verifySessionToken } = require("../../utils/helper/hmac.helper");
 const { createFingerprint, verifyFingerprint } = require("../../utils/helper/channelBinding.helper");
-const { isConsumed, markAsConsumed, isRequestIssued, markRequestIssued, clearIssuedRequest } = require("../../utils/helper/consumedTokens");
+const { isConsumed, markAsConsumed, isRequestIssued, markRequestIssued, clearIssuedRequest, incrementFailedAttempts, getFailedAttempts } = require("../../utils/helper/consumedTokens");
 const { OTP_VALIDITY_SECONDS } = require("../../utils/config/env");
 const { send: sendNotification } = require("../../utils/notifications/NotificationEngine");
 // ─────────────────────────────────────────────────────────────────────
@@ -253,7 +253,13 @@ const validateOtpBl = async (req, res) => {
         }
 
         // Step 4: Check attempts remaining (stateless rate limiting)
-        if (tokenData.attempts <= 0) {
+        const failedAttempts = await getFailedAttempts(nonce);
+        if (failedAttempts >= tokenData.attempts) {
+            const validitySeconds = OTP_VALIDITY_SECONDS;
+            await markAsConsumed(nonce, validitySeconds);
+            if (mobileNumber) await clearIssuedRequest(mobileNumber, params);
+            if (email) await clearIssuedRequest(email, params);
+
             throw new ValidationError(
                 "Maximum OTP attempts exceeded",
                 {},
@@ -288,9 +294,16 @@ const validateOtpBl = async (req, res) => {
         const verified = verifyHtotpCode(derivedKey, timeStep, nonce, txContext, otp);
 
         if (!verified) {
-            // ─── Decrement attempts and re-sign token ───
-            const result = decrementAttempts(requestToken);
-            if (!result || result.attemptsRemaining <= 0) {
+            // ─── Increment failed attempts in Redis ───
+            const validitySeconds = OTP_VALIDITY_SECONDS;
+            const currentFails = await incrementFailedAttempts(nonce, validitySeconds);
+            const attemptsRemaining = tokenData.attempts - currentFails;
+
+            if (attemptsRemaining <= 0) {
+                await markAsConsumed(nonce, validitySeconds);
+                if (mobileNumber) await clearIssuedRequest(mobileNumber, params);
+                if (email) await clearIssuedRequest(email, params);
+
                 throw new ValidationError(
                     "Invalid OTP — no attempts remaining",
                     {},
@@ -301,9 +314,9 @@ const validateOtpBl = async (req, res) => {
 
             throw new ValidationError(
                 "OTP does not match",
-                { requestToken: result.newToken },
+                {}, // Note: token is no longer returned in payload
                 "Validation error",
-                `Invalid OTP. ${result.attemptsRemaining} attempt(s) remaining.`,
+                `Invalid OTP. ${attemptsRemaining} attempt(s) remaining.`,
                 400,
                 -1,
                 "VALERR0002"
